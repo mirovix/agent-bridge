@@ -114,7 +114,7 @@ public final class MainActivity extends Activity {
         TextView title = Ui.title(this, "Agent Bridge", 30);
         title.setGravity(Gravity.CENTER);
         root.addView(title, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, 18)));
-        TextView loading = Ui.text(this, "Connessione sicura…", 14, Ui.MUTED);
+        TextView loading = Ui.text(this, "Connecting securely…", 14, Ui.MUTED);
         loading.setGravity(Gravity.CENTER);
         root.addView(loading, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, 8)));
         setContentView(root);
@@ -135,10 +135,10 @@ public final class MainActivity extends Activity {
         LinearLayout root = page();
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         root.addView(logo(92));
-        TextView title = Ui.title(this, "Bentornato", 31);
+        TextView title = Ui.title(this, "Welcome back", 31);
         title.setGravity(Gravity.CENTER);
         root.addView(title, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, 18)));
-        TextView subtitle = Ui.text(this, "Entra nel tuo ponte privato verso Codex e Claude.", 15, Ui.MUTED);
+        TextView subtitle = Ui.text(this, "Sign in to your private bridge to Codex and Claude.", 15, Ui.MUTED);
         subtitle.setGravity(Gravity.CENTER);
         root.addView(subtitle, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, 6)));
 
@@ -156,44 +156,44 @@ public final class MainActivity extends Activity {
         password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         panel.addView(password, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 54), Ui.dp(this, 12)));
 
-        EditText code = Ui.field(this, "Codice 2FA o recupero");
+        EditText code = Ui.field(this, "2FA or recovery code");
         code.setInputType(InputType.TYPE_CLASS_NUMBER);
         code.setGravity(Gravity.CENTER);
         code.setAutofillHints("smsOTPCode");
         panel.addView(code, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 54), Ui.dp(this, 12)));
 
         final boolean[] recoveryMode = {false};
-        Button codeMode = Ui.button(this, "Usa un codice di recupero", false);
+        Button codeMode = Ui.button(this, "Use a recovery code", false);
         codeMode.setOnClickListener(v -> {
             recoveryMode[0] = !recoveryMode[0];
             code.setText("");
-            code.setHint(recoveryMode[0] ? "Codice di recupero" : "Codice 2FA a 6 cifre");
+            code.setHint(recoveryMode[0] ? "Recovery code" : "6-digit 2FA code");
             code.setInputType(recoveryMode[0]
                     ? InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                     : InputType.TYPE_CLASS_NUMBER);
             code.setGravity(Gravity.CENTER);
-            codeMode.setText(recoveryMode[0] ? "Usa il codice 2FA" : "Usa un codice di recupero");
+            codeMode.setText(recoveryMode[0] ? "Use a 2FA code" : "Use a recovery code");
         });
         panel.addView(codeMode, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48), Ui.dp(this, 8)));
 
         TextView error = Ui.text(this, "", 14, Color.rgb(255, 120, 135));
         panel.addView(error, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, 10)));
 
-        Button login = Ui.button(this, "Accedi", true);
+        Button login = Ui.button(this, "Sign in", true);
         panel.addView(login, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 56), Ui.dp(this, 4)));
         login.setOnClickListener(view -> {
             String serverValue = server.getText().toString().trim();
             if (password.getText().length() == 0 || code.getText().toString().trim().isEmpty()) {
-                error.setText("Inserisci password e codice prima di accedere.");
+                error.setText("Enter your password and code before signing in.");
                 return;
             }
             if (!serverValue.startsWith("https://")) {
-                error.setText("Il server deve iniziare con https://");
+                error.setText("The server must start with https://");
                 return;
             }
             hideKeyboard();
             login.setEnabled(false);
-            login.setText("Accesso…");
+            login.setText("Signing in…");
             error.setText("");
             api.setBaseUrl(serverValue);
             io.execute(() -> {
@@ -204,7 +204,7 @@ public final class MainActivity extends Activity {
                 } catch (Exception exception) {
                     runOnUiThread(() -> {
                         error.setText(message(exception));
-                        login.setText("Accedi");
+                        login.setText("Sign in");
                         login.setEnabled(true);
                     });
                 }
@@ -227,9 +227,9 @@ public final class MainActivity extends Activity {
         TextView eyebrow = Ui.text(this, "AGENT BRIDGE", 11, Ui.CYAN);
         eyebrow.setLetterSpacing(.18f);
         heading.addView(eyebrow);
-        heading.addView(Ui.title(this, "Nuova missione", 27));
+        heading.addView(Ui.title(this, "New mission", 27));
         header.addView(heading, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Button logout = Ui.button(this, "Esci", false);
+        Button logout = Ui.button(this, "Sign out", false);
         header.addView(logout, new LinearLayout.LayoutParams(Ui.dp(this, 76), Ui.dp(this, 46)));
         logout.setOnClickListener(v -> io.execute(() -> {
             try { api.logout(); } catch (Exception ignored) {}
@@ -245,7 +245,7 @@ public final class MainActivity extends Activity {
         panel.setPadding(Ui.dp(this, 18), Ui.dp(this, 18), Ui.dp(this, 18), Ui.dp(this, 20));
         panel.setBackground(Ui.panel(this));
 
-        panel.addView(label("Assistente"));
+        panel.addView(label("Assistant"));
         JSONArray agents = profile.optJSONArray("agents");
         List<String> agentNames = new ArrayList<>();
         if (agents != null) {
@@ -254,19 +254,19 @@ public final class MainActivity extends Activity {
         Spinner agentSpinner = spinner(agentNames);
         panel.addView(agentSpinner, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52), Ui.dp(this, 6)));
 
-        panel.addView(labelWithTop("Cartella", 16));
+        panel.addView(labelWithTop("Folder", 16));
         LinkedHashSet<String> paths = new LinkedHashSet<>();
         JSONObject workspaces = profile.optJSONObject("workspaces");
         if (workspaces != null) {
             addStrings(paths, workspaces.optJSONArray("recent"));
             addStrings(paths, workspaces.optJSONArray("roots"));
         }
-        EditText directory = Ui.field(this, "Cartella di lavoro");
+        EditText directory = Ui.field(this, "Working folder");
         directory.setText(paths.isEmpty() ? "" : paths.iterator().next());
         panel.addView(directory, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 54), Ui.dp(this, 6)));
 
-        panel.addView(labelWithTop("Messaggio", 16));
-        promptField = Ui.field(this, "Scrivi un messaggio…");
+        panel.addView(labelWithTop("Message", 16));
+        promptField = Ui.field(this, "Write a message…");
         promptField.setSingleLine(false);
         promptField.setGravity(Gravity.TOP);
         promptField.setPadding(Ui.dp(this, 16), Ui.dp(this, 14), Ui.dp(this, 16), Ui.dp(this, 14));
@@ -277,10 +277,10 @@ public final class MainActivity extends Activity {
         promptCount.setGravity(Gravity.END);
         panel.addView(promptCount, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, 4)));
 
-        panel.addView(labelWithTop("Mentre aspetti", 12));
+        panel.addView(labelWithTop("While you wait", 12));
         List<String> leisureChoices = new ArrayList<>();
         leisureChoices.add("Instagram Reels");
-        leisureChoices.add("HappyDEV · 5 giochi");
+        leisureChoices.add("HappyDEV · 5 games");
         Spinner leisureSpinner = spinner(leisureChoices);
         String savedLeisure = getPreferences(MODE_PRIVATE).getString("waitingActivity", "reels");
         leisureSpinner.setSelection("happydev".equals(savedLeisure) ? 1 : 0);
@@ -294,26 +294,26 @@ public final class MainActivity extends Activity {
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        micButton = Ui.button(this, "●  Parla", false);
+        micButton = Ui.button(this, "●  Speak", false);
         actions.addView(micButton, new LinearLayout.LayoutParams(0, Ui.dp(this, 56), .38f));
-        Button send = Ui.button(this, "Invia  →", true);
+        Button send = Ui.button(this, "Send  →", true);
         LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(0, Ui.dp(this, 56), .62f);
         sendParams.leftMargin = Ui.dp(this, 10);
         actions.addView(send, sendParams);
         panel.addView(actions, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 56), Ui.dp(this, 14)));
 
-        notice = Ui.text(this, "Chat continua attiva · i prompt restano nella stessa conversazione sul PC.", 12, Color.rgb(92, 232, 166));
+        notice = Ui.text(this, "Continuous chat on · prompts stay in the same conversation on your PC.", 12, Color.rgb(92, 232, 166));
         panel.addView(notice, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, 10)));
 
         micButton.setOnClickListener(v -> toggleRecording());
         send.setOnClickListener(v -> {
             String prompt = promptField.getText().toString().trim();
             if (prompt.isEmpty()) {
-                notice.setText("Scrivi o detta un prompt prima di inviarlo.");
+                notice.setText("Type or dictate a prompt before sending it.");
                 return;
             }
             if (prompt.length() > maxPromptCharacters) {
-                notice.setText("Il prompt è troppo lungo: riducilo prima di inviarlo.");
+                notice.setText("The prompt is too long: shorten it before sending.");
                 return;
             }
             int index = agentSpinner.getSelectedItemPosition();
@@ -321,8 +321,8 @@ public final class MainActivity extends Activity {
             if (agent == null) return;
             hideKeyboard();
             send.setEnabled(false);
-            send.setText("Avvio…");
-            notice.setText("Sto preparando la missione.");
+            send.setText("Starting…");
+            notice.setText("Preparing the mission.");
             JSONObject request = new JSONObject();
             try {
                 request.put("agent", agent.optString("id"));
@@ -340,7 +340,7 @@ public final class MainActivity extends Activity {
                 try {
                     JSONObject job = api.startJob(request);
                     runOnUiThread(() -> {
-                        send.setText("Invia  →");
+                        send.setText("Send  →");
                         send.setEnabled(true);
                         promptField.setText("");
                         String leisure = leisureSpinner.getSelectedItemPosition() == 1 ? "happydev" : "reels";
@@ -349,7 +349,7 @@ public final class MainActivity extends Activity {
                 } catch (Exception exception) {
                     runOnUiThread(() -> {
                         if (showLoginIfExpired(exception)) return;
-                        send.setText("Invia  →");
+                        send.setText("Send  →");
                         send.setEnabled(true);
                         notice.setText(message(exception));
                     });
@@ -430,18 +430,18 @@ public final class MainActivity extends Activity {
             recording = true;
             micButton.setText("■  Stop");
             micButton.setTextColor(Color.rgb(255, 105, 124));
-            notice.setText("Ti ascolto… premi Stop quando hai finito.");
+            notice.setText("Listening… tap Stop when you're done.");
         } catch (Exception exception) {
             releaseRecorder();
-            notice.setText("Microfono: " + message(exception));
+            notice.setText("Microphone: " + message(exception));
         }
     }
 
     private void stopRecording() {
         recording = false;
-        micButton.setText("…  Trascrivo");
+        micButton.setText("…  Transcribing");
         micButton.setEnabled(false);
-        notice.setText("Sto trasformando la voce in testo…");
+        notice.setText("Converting speech to text…");
         try {
             recorder.stop();
             recorder.release();
@@ -449,28 +449,28 @@ public final class MainActivity extends Activity {
         } catch (RuntimeException exception) {
             releaseRecorder();
             micButton.setEnabled(true);
-            micButton.setText("●  Parla");
-            notice.setText("Registrazione troppo breve: riprova parlando per almeno un secondo.");
+            micButton.setText("●  Speak");
+            notice.setText("Recording too short: try again and speak for at least one second.");
             return;
         }
         File finished = recordingFile;
         io.execute(() -> {
             try {
                 byte[] bytes = Files.readAllBytes(finished.toPath());
-                if (bytes.length < 1024) throw new IllegalStateException("La registrazione è vuota.");
+                if (bytes.length < 1024) throw new IllegalStateException("The recording is empty.");
                 String text = api.transcribe(bytes).trim();
-                if (text.isEmpty()) throw new IllegalStateException("Non ho riconosciuto parole. Riprova più vicino al microfono.");
+                if (text.isEmpty()) throw new IllegalStateException("No words recognized. Try again closer to the microphone.");
                 runOnUiThread(() -> {
                     String previous = promptField.getText().toString().trim();
                     promptField.setText(previous.isEmpty() ? text : previous + " " + text);
                     promptField.setSelection(promptField.length());
-                    notice.setText("Trascrizione pronta.");
+                    notice.setText("Transcription ready.");
                     resetMicButton();
                 });
             } catch (Exception exception) {
                 runOnUiThread(() -> {
                     if (showLoginIfExpired(exception)) return;
-                    notice.setText("Trascrizione: " + message(exception));
+                    notice.setText("Transcription: " + message(exception));
                     resetMicButton();
                 });
             } finally {
@@ -481,7 +481,7 @@ public final class MainActivity extends Activity {
 
     private void resetMicButton() {
         micButton.setEnabled(true);
-        micButton.setText("●  Parla");
+        micButton.setText("●  Speak");
         micButton.setTextColor(Color.WHITE);
     }
 
@@ -500,11 +500,11 @@ public final class MainActivity extends Activity {
         if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
             startRecording();
         } else if (!shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)) {
-            notice.setText("Abilita il microfono nelle impostazioni Android.");
+            notice.setText("Enable the microphone in Android Settings.");
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
             startActivity(intent);
         } else {
-            notice.setText("Il permesso microfono è necessario per la dettatura.");
+            notice.setText("Microphone permission is required for dictation.");
         }
     }
 
@@ -517,7 +517,7 @@ public final class MainActivity extends Activity {
         Throwable cause = exception;
         while (cause != null) {
             if (cause instanceof ApiClient.UnauthorizedException) {
-                Toast.makeText(this, "Sessione scaduta: accedi di nuovo.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Session expired: sign in again.", Toast.LENGTH_LONG).show();
                 showLogin();
                 return true;
             }
@@ -530,7 +530,7 @@ public final class MainActivity extends Activity {
         Throwable cause = exception;
         while (cause.getCause() != null) cause = cause.getCause();
         String message = cause.getMessage();
-        return message == null || message.isEmpty() ? "Operazione non riuscita." : message;
+        return message == null || message.isEmpty() ? "Operation failed." : message;
     }
 
     @Override

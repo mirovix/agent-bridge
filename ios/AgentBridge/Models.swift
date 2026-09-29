@@ -187,9 +187,9 @@ enum APIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: return "Il server non è configurato."
-        case .unauthorized: return "Sessione scaduta."
-        case .invalidResponse: return "Risposta non valida dal server."
+        case .notConfigured: return "The server is not configured."
+        case .unauthorized: return "Session expired."
+        case .invalidResponse: return "Invalid response from the server."
         case .server(let message): return message
         }
     }
@@ -211,9 +211,9 @@ extension String {
 
 func relativeTime(_ milliseconds: Double) -> String {
     let interval = Date().timeIntervalSince1970 - milliseconds / 1000
-    if interval < 60 { return "adesso" }
-    if interval < 3600 { return "\(Int(interval / 60)) min fa" }
-    if interval < 86_400 { return "\(Int(interval / 3600)) h fa" }
-    if interval < 604_800 { return "\(Int(interval / 86_400)) g fa" }
+    if interval < 60 { return "just now" }
+    if interval < 3600 { return "\(Int(interval / 60)) min ago" }
+    if interval < 86_400 { return "\(Int(interval / 3600)) h ago" }
+    if interval < 604_800 { return "\(Int(interval / 86_400)) d ago" }
     return Date(timeIntervalSince1970: milliseconds / 1000).formatted(date: .abbreviated, time: .omitted)
 }

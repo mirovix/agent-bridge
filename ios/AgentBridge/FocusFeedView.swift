@@ -85,7 +85,7 @@ struct FocusFeedView: View {
             BrandMark(size: 42)
             VStack(alignment: .leading, spacing: 1) {
                 Text("FOCUS FEED").font(.caption2.bold()).tracking(1.6).foregroundStyle(AppTheme.cyan)
-                Text(currentJob.agent == "codex" ? "Codex è al lavoro" : "Claude è al lavoro")
+                Text(currentJob.agent == "codex" ? "Codex is working" : "Claude is working")
                     .font(.subheadline.weight(.semibold))
             }
             Spacer()
@@ -105,7 +105,7 @@ struct FocusFeedView: View {
                     .background(.thinMaterial, in: Circle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Chiudi")
+            .accessibilityLabel("Close")
         }
     }
 
@@ -118,7 +118,7 @@ struct FocusFeedView: View {
                 VStack(spacing: 10) {
                     HStack(spacing: 8) {
                         ProgressView().tint(AppTheme.cyan)
-                        Text(currentJob.status == "queued" ? "In coda: partirà appena possibile" : "In esecuzione nella stessa chat")
+                        Text(currentJob.status == "queued" ? "Queued: it will start as soon as possible" : "Running in the same chat")
                     }
                     HStack(spacing: 10) {
                         Button { activity = .reels } label: {
@@ -139,7 +139,7 @@ struct FocusFeedView: View {
                 Button {
                     dismiss()
                 } label: {
-                    Label(currentJob.status == "done" ? "Lavoro completato" : "Chiudi e controlla l’attività", systemImage: currentJob.status == "done" ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    Label(currentJob.status == "done" ? "Work completed" : "Close and check the activity", systemImage: currentJob.status == "done" ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
@@ -158,30 +158,30 @@ struct FocusFeedView: View {
         let lastActivity = events.last(where: { ["tool", "tool_result", "thinking", "system", "error"].contains($0.role) })
         return [
             FocusCard(
-                eyebrow: "IL TUO PROMPT",
+                eyebrow: "YOUR PROMPT",
                 title: currentJob.promptPreview,
-                body: "È stato consegnato in modo cifrato al computer \(api.me?.host ?? "remoto").",
+                body: "Delivered encrypted to \(api.me?.host ?? "the remote computer").",
                 icon: "paperplane.fill",
                 colors: [AppTheme.violet, AppTheme.cyan]
             ),
             FocusCard(
-                eyebrow: ["queued", "running"].contains(currentJob.status) ? "LIVE" : "STATO",
+                eyebrow: ["queued", "running"].contains(currentJob.status) ? "LIVE" : "STATUS",
                 title: statusTitle,
-                body: "\(events.count) aggiornamenti ricevuti · \(currentJob.cwd.abbreviatedPath)",
+                body: "\(events.count) updates received · \(currentJob.cwd.abbreviatedPath)",
                 icon: ["queued", "running"].contains(currentJob.status) ? "waveform.path.ecg" : "checkmark.seal.fill",
                 colors: [Color(red: 0.02, green: 0.55, blue: 0.70), AppTheme.mint]
             ),
             FocusCard(
-                eyebrow: "DAL TUO AGENTE",
-                title: lastAnswer ?? "Sto preparando la risposta…",
-                body: lastAnswer == nil ? "Questa scheda si aggiorna appena arriva il primo messaggio." : "Ultimo messaggio ricevuto in tempo reale.",
+                eyebrow: "FROM YOUR AGENT",
+                title: lastAnswer ?? "Preparing the response…",
+                body: lastAnswer == nil ? "This card updates as soon as the first message arrives." : "Latest message, received in real time.",
                 icon: "sparkles",
                 colors: [Color(red: 0.50, green: 0.16, blue: 0.72), Color(red: 0.96, green: 0.30, blue: 0.55)]
             ),
             FocusCard(
-                eyebrow: "DIETRO LE QUINTE",
+                eyebrow: "BEHIND THE SCENES",
                 title: lastActivity?.name ?? activityTitle(lastActivity),
-                body: lastActivity?.text ?? "L’agente sta analizzando il contesto e scegliendo il prossimo passo.",
+                body: lastActivity?.text ?? "The agent is analysing the context and choosing the next step.",
                 icon: "terminal.fill",
                 colors: [Color(red: 0.06, green: 0.18, blue: 0.33), AppTheme.violet]
             ),
@@ -190,21 +190,21 @@ struct FocusFeedView: View {
 
     private var statusTitle: String {
         switch currentJob.status {
-        case "queued": return "Il prompt è in coda"
-        case "done": return "Prompt completato"
-        case "failed": return "Serve la tua attenzione"
-        case "cancelled": return "Attività fermata"
-        default: return "\(currentJob.agent == "codex" ? "Codex" : "Claude") sta costruendo la risposta"
+        case "queued": return "The prompt is queued"
+        case "done": return "Prompt completed"
+        case "failed": return "Needs your attention"
+        case "cancelled": return "Activity stopped"
+        default: return "\(currentJob.agent == "codex" ? "Codex" : "Claude") is building the response"
         }
     }
 
     private func activityTitle(_ event: BridgeMessage?) -> String {
         switch event?.role {
-        case "thinking": return "Ragionamento in corso"
-        case "tool": return "Strumento in uso"
-        case "tool_result": return "Risultato ricevuto"
-        case "error": return "Dettaglio errore"
-        default: return "Elaborazione sicura"
+        case "thinking": return "Reasoning"
+        case "tool": return "Using a tool"
+        case "tool_result": return "Result received"
+        case "error": return "Error details"
+        default: return "Secure processing"
         }
     }
 
@@ -261,13 +261,13 @@ private struct WaitingActivityView: View {
                     Text(activity.title).font(.headline)
                     HStack(spacing: 6) {
                         if ["queued", "running"].contains(job.status) { ProgressView().controlSize(.mini) }
-                        Text(["queued", "running"].contains(job.status) ? "L’agente lavora in background" : "Il lavoro è terminato")
+                        Text(["queued", "running"].contains(job.status) ? "The agent is working in the background" : "The work is finished")
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Chiudi") { dismiss() }.fontWeight(.semibold)
+                Button("Close") { dismiss() }.fontWeight(.semibold)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -359,7 +359,7 @@ private struct FocusCardView: View {
                     .font(.body)
                     .lineLimit(8)
                     .foregroundStyle(.white.opacity(0.78))
-                Label("Scorri", systemImage: "chevron.up")
+                Label("Swipe", systemImage: "chevron.up")
                     .font(.caption.bold())
                     .foregroundStyle(.white.opacity(0.62))
             }

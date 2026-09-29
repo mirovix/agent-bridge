@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isInside } from './platform.js';
 
 export const DATA_DIR = process.env.AGENT_BRIDGE_HOME || path.join(os.homedir(), '.agent-bridge');
 export const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
@@ -34,20 +35,39 @@ export const DEFAULT_CONFIG = {
   },
 };
 
+// Windows has no POSIX permission bits (chmod only toggles read-only and stat
+// always reports 0666); files under the user profile are private through its ACL.
+const POSIX_MODES = process.platform !== 'win32';
+
 export function ensureDataDir() {
   fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
-  fs.chmodSync(DATA_DIR, 0o700);
+  if (POSIX_MODES) fs.chmodSync(DATA_DIR, 0o700);
+}
+
+/** rename() that tolerates Windows' transient locks (antivirus, indexer, readers). */
+export function replaceFile(tmp, file) {
+  for (let attempt = 0; ; attempt++) {
+    try { return fs.renameSync(tmp, file); } catch (e) {
+      if (!POSIX_MODES && ['EPERM', 'EACCES', 'EBUSY'].includes(e.code) && attempt < 10) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * (attempt + 1));
+        continue;
+      }
+      try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+      throw e;
+    }
+  }
 }
 
 export function writePrivateJson(file, data) {
   ensureDataDir();
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
-  fs.renameSync(tmp, file);
-  fs.chmodSync(file, 0o600);
+  replaceFile(tmp, file);
+  if (POSIX_MODES) fs.chmodSync(file, 0o600);
 }
 
 function checkPrivate(file) {
+  if (!POSIX_MODES) return;
   const st = fs.statSync(file);
   if (st.mode & 0o077) {
     throw new Error(`${file} is readable by other users (mode ${(st.mode & 0o777).toString(8)}). Run: chmod 600 ${file}`);
@@ -99,7 +119,7 @@ export function resolveWorkspaceDir(cfg, dir) {
   for (const ws of cfg.workspaces) {
     let root;
     try { root = fs.realpathSync(ws); } catch { continue; }
-    if (real === root || real.startsWith(root + path.sep)) return real;
+    if (isInside(real, root)) return real;
   }
   return null;
 }

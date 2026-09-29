@@ -115,7 +115,7 @@ final class FocusDialog extends Dialog {
         eyebrow.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         eyebrow.setLetterSpacing(.18f);
         labels.addView(eyebrow);
-        liveStatus = Ui.text(activity, "Missione in avvio", 14, Color.WHITE);
+        liveStatus = Ui.text(activity, "Mission starting", 14, Color.WHITE);
         labels.addView(liveStatus);
         top.addView(labels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         Button close = Ui.button(activity, "✕", false);
@@ -127,7 +127,7 @@ final class FocusDialog extends Dialog {
         LinearLayout modeBar = new LinearLayout(activity);
         modeBar.setOrientation(LinearLayout.HORIZONTAL);
         modeBar.setGravity(Gravity.CENTER);
-        statusButton = modeButton("Stato", "status");
+        statusButton = modeButton("Status", "status");
         reelsButton = modeButton("Reels", "reels");
         gamesButton = modeButton("HappyDEV", "happydev");
         addModeButton(modeBar, statusButton, 0);
@@ -154,11 +154,11 @@ final class FocusDialog extends Dialog {
         dots.setGravity(Gravity.CENTER);
         content.addView(dots, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(activity, 28)));
 
-        hint = Ui.text(activity, "Scorri in alto o in basso per cambiare scheda", 12, Ui.MUTED);
+        hint = Ui.text(activity, "Swipe up or down to switch cards", 12, Ui.MUTED);
         hint.setGravity(Gravity.CENTER);
         content.addView(hint, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(activity, 2)));
 
-        finish = Ui.button(activity, "In esecuzione…", true);
+        finish = Ui.button(activity, "Running…", true);
         finish.setEnabled(false);
         finish.setOnClickListener(v -> dismiss());
         content.addView(finish, Ui.params(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(activity, 56), Ui.dp(activity, 15)));
@@ -234,10 +234,10 @@ final class FocusDialog extends Dialog {
 
     private void seedCards(JSONObject job) {
         cards.clear();
-        cards.add(new Card("LA TUA MISSIONE", originalPrompt, "PROMPT", new int[]{Color.rgb(31, 70, 96), Color.rgb(31, 25, 72)}));
-        cards.add(new Card("L'AGENTE È AL LAVORO", statusCopy(job.optString("status")), job.optString("agent", "AGENT").toUpperCase(), new int[]{Color.rgb(48, 30, 91), Color.rgb(16, 54, 76)}));
-        cards.add(new Card("RISPOSTA", "La risposta apparirà qui appena l'agente produce il primo risultato.", "LIVE", new int[]{Color.rgb(20, 72, 68), Color.rgb(25, 30, 67)}));
-        cards.add(new Card("DIETRO LE QUINTE", "Sto seguendo gli aggiornamenti della sessione in tempo reale.", "ATTIVITÀ", new int[]{Color.rgb(80, 38, 70), Color.rgb(30, 33, 67)}));
+        cards.add(new Card("YOUR MISSION", originalPrompt, "PROMPT", new int[]{Color.rgb(31, 70, 96), Color.rgb(31, 25, 72)}));
+        cards.add(new Card("THE AGENT IS AT WORK", statusCopy(job.optString("status")), job.optString("agent", "AGENT").toUpperCase(), new int[]{Color.rgb(48, 30, 91), Color.rgb(16, 54, 76)}));
+        cards.add(new Card("RESPONSE", "The response will appear here as soon as the agent produces its first result.", "LIVE", new int[]{Color.rgb(20, 72, 68), Color.rgb(25, 30, 67)}));
+        cards.add(new Card("BEHIND THE SCENES", "Following session updates in real time.", "ACTIVITY", new int[]{Color.rgb(80, 38, 70), Color.rgb(30, 33, 67)}));
     }
 
     private void schedulePoll(long delay) {
@@ -256,10 +256,10 @@ final class FocusDialog extends Dialog {
                     if (exception instanceof ApiClient.UnauthorizedException) {
                         terminal = true;
                         dismiss();
-                        Toast.makeText(activity, "Sessione scaduta: accedi di nuovo.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(activity, "Session expired: sign in again.", Toast.LENGTH_LONG).show();
                         activity.showLogin();
                     } else {
-                        liveStatus.setText("Connessione interrotta · nuovo tentativo…");
+                        liveStatus.setText("Connection lost · retrying…");
                     }
                 });
             } finally {
@@ -276,10 +276,10 @@ final class FocusDialog extends Dialog {
         if (job == null) return;
         String status = job.optString("status", "running");
         liveStatus.setText(statusCopy(status));
-        cards.get(1).body = statusCopy(status) + "\n\nCartella\n" + job.optString("cwd", "—");
+        cards.get(1).body = statusCopy(status) + "\n\nFolder\n" + job.optString("cwd", "—");
 
         JSONArray events = detail.optJSONArray("events");
-        String answer = "La risposta apparirà qui appena l'agente produce il primo risultato.";
+        String answer = "The response will appear here as soon as the agent produces its first result.";
         StringBuilder activityText = new StringBuilder();
         if (events != null) {
             int appended = 0;
@@ -288,7 +288,7 @@ final class FocusDialog extends Dialog {
                 if (event == null) continue;
                 String text = event.optString("text").trim();
                 if (text.isEmpty()) continue;
-                if ("assistant".equals(event.optString("role")) && answer.startsWith("La risposta")) answer = text;
+                if ("assistant".equals(event.optString("role")) && answer.startsWith("The response will appear")) answer = text;
                 if (appended < 3) {
                     if (activityText.length() > 0) activityText.append("\n\n");
                     activityText.append("• ").append(text);
@@ -302,9 +302,9 @@ final class FocusDialog extends Dialog {
         terminal = !status.equals("queued") && !status.equals("running");
         if (terminal) {
             boolean success = status.equals("done") || status.equals("completed") || status.equals("success");
-            finish.setText(success ? "Missione completata  ✓" : "Chiudi — " + statusCopy(status));
+            finish.setText(success ? "Mission complete  ✓" : "Close — " + statusCopy(status));
             finish.setEnabled(true);
-            finish.setText(success ? "Missione completata · torna alla chat  ✓" : "Chiudi — " + statusCopy(status));
+            finish.setText(success ? "Mission complete · back to chat  ✓" : "Close — " + statusCopy(status));
             if (success && current == 1) current = 2;
             // Reels and HappyDEV are owned by this dialog, so dismissing it also
             // stops and destroys both WebViews in the onDismiss listener.
@@ -376,14 +376,14 @@ final class FocusDialog extends Dialog {
 
     private static String statusCopy(String status) {
         switch (status) {
-            case "queued": return "In coda";
-            case "running": return "L'agente sta lavorando";
+            case "queued": return "Queued";
+            case "running": return "The agent is working";
             case "done":
             case "completed":
-            case "success": return "Completata";
-            case "failed": return "Non riuscita";
-            case "cancelled": return "Annullata";
-            default: return status.isEmpty() ? "In esecuzione" : status;
+            case "success": return "Completed";
+            case "failed": return "Failed";
+            case "cancelled": return "Cancelled";
+            default: return status.isEmpty() ? "Running" : status;
         }
     }
 

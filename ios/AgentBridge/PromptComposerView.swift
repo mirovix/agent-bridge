@@ -38,10 +38,10 @@ struct PromptComposerView: View {
                 options.padding(.top, 8)
             } label: {
                 HStack {
-                    Label(showOptions ? "Nascondi opzioni" : "Opzioni", systemImage: "slider.horizontal.3")
+                    Label(showOptions ? "Hide options" : "Options", systemImage: "slider.horizontal.3")
                     Spacer()
                     if agent.resumable {
-                        Label("Stessa chat", systemImage: "link")
+                        Label("Same chat", systemImage: "link")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppTheme.mint)
                     }
@@ -88,7 +88,7 @@ struct PromptComposerView: View {
                 .overlay { RoundedRectangle(cornerRadius: 22).stroke(promptFocused ? AppTheme.cyan.opacity(0.55) : .white.opacity(0.10), lineWidth: 1) }
                 .overlay(alignment: .topLeading) {
                     if prompt.isEmpty {
-                        Text(session == nil ? "Cosa deve fare l’agente?" : "Scrivi un messaggio…")
+                        Text(session == nil ? "What should the agent do?" : "Write a message…")
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 11)
                             .padding(.vertical, session == nil ? 13 : 8)
@@ -98,7 +98,7 @@ struct PromptComposerView: View {
 
             HStack {
                 if prompt.count > maxPromptCharacters {
-                    Label("Prompt troppo lungo", systemImage: "exclamationmark.triangle.fill")
+                    Label("Prompt too long", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
                 }
                 Spacer()
@@ -133,7 +133,7 @@ struct PromptComposerView: View {
                     .frame(width: 42, height: 42)
                     .background(recorder.isRecording ? Color.red : AppTheme.cyan.opacity(0.13), in: Circle())
                     .overlay { Circle().stroke(recorder.isRecording ? Color.red.opacity(0.8) : AppTheme.cyan.opacity(0.34), lineWidth: 1) }
-                    .accessibilityLabel(recorder.isRecording ? "Ferma e trascrivi" : "Registra prompt vocale")
+                    .accessibilityLabel(recorder.isRecording ? "Stop and transcribe" : "Record voice prompt")
                     .disabled(isTranscribing)
                 }
 
@@ -154,7 +154,7 @@ struct PromptComposerView: View {
                     }
                     .frame(width: 42, height: 42)
                     .background(Color.white.opacity(0.07), in: Circle())
-                    .accessibilityLabel("Nascondi tastiera")
+                    .accessibilityLabel("Hide keyboard")
                 }
 
                 Spacer()
@@ -188,7 +188,7 @@ struct PromptComposerView: View {
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("Fine") { dismissKeyboard() }
+                Button("Done") { dismissKeyboard() }
             }
         }
     }
@@ -198,20 +198,20 @@ struct PromptComposerView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack {
                 if !agent.models.isEmpty {
-                    Picker("Modello", selection: $model) {
+                    Picker("Model", selection: $model) {
                         ForEach(agent.models) { Text($0.label).tag($0.id) }
                     }
                     .pickerStyle(.menu)
                 }
                 if !availableEfforts.isEmpty {
-                    Picker("Ragionamento", selection: $effort) {
-                        Text("Predefinito").tag("")
+                    Picker("Reasoning", selection: $effort) {
+                        Text("Default").tag("")
                         ForEach(availableEfforts, id: \.self) { Text($0).tag($0) }
                     }
                     .pickerStyle(.menu)
                 }
                 if !agent.modes.isEmpty {
-                    Picker("Permessi", selection: $mode) {
+                    Picker("Permissions", selection: $mode) {
                         ForEach(agent.modes, id: \.self) { Text(modeLabel($0)).tag($0) }
                     }
                     .pickerStyle(.menu)
@@ -233,7 +233,7 @@ struct PromptComposerView: View {
     }
 
     private func modeLabel(_ value: String) -> String {
-        ["plan": "Piano", "manual": "Manuale", "acceptEdits": "Modifica file", "auto": "Automatico", "read-only": "Sola lettura", "workspace-write": "Scrittura workspace", "danger-full-access": "Accesso completo"][value] ?? value
+        ["plan": "Plan", "manual": "Manual", "acceptEdits": "Edit files", "auto": "Automatic", "read-only": "Read-only", "workspace-write": "Workspace write", "danger-full-access": "Full access"][value] ?? value
     }
 
     private func loadPhotos(_ items: [PhotosPickerItem]) async {
@@ -251,7 +251,7 @@ struct PromptComposerView: View {
         errorMessage = nil
         if recorder.isRecording {
             guard let url = await recorder.stop() else {
-                errorMessage = "Registrazione troppo breve: tieni premuto un attimo di più."
+                errorMessage = "Recording too short: hold a little longer."
                 return
             }
             isTranscribing = true
@@ -264,7 +264,7 @@ struct PromptComposerView: View {
                 let text = try await api.transcribe(data: audio, mimeType: "audio/mp4")
                 let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !clean.isEmpty else {
-                    errorMessage = "Non ho capito nulla. Parla più vicino al microfono."
+                    errorMessage = "I couldn't catch anything. Speak closer to the microphone."
                     return
                 }
                 if !prompt.isEmpty, !prompt.hasSuffix(" ") { prompt += " " }

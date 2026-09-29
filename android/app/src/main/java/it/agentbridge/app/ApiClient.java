@@ -72,12 +72,12 @@ final class ApiClient {
     }
 
     String transcribe(byte[] audio) throws Exception {
-        return request("api/transcribe?lang=it", "POST", audio, "audio/mp4", 100_000).optString("text");
+        return request("api/transcribe?lang=" + java.util.Locale.getDefault().getLanguage(), "POST", audio, "audio/mp4", 100_000).optString("text");
     }
 
     private JSONObject request(String path, String method, byte[] body, String contentType, int timeout) throws Exception {
         if (baseUrl.isEmpty() || !baseUrl.startsWith("https://")) {
-            throw new IOException("Inserisci un indirizzo server HTTPS valido.");
+            throw new IOException("Enter a valid HTTPS server address.");
         }
         HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + "/" + path).openConnection();
         connection.setRequestMethod(method);
@@ -111,10 +111,10 @@ final class ApiClient {
         JSONObject json = text.isEmpty() ? new JSONObject() : new JSONObject(text);
         if (code == 401) {
             clearSession();
-            throw new UnauthorizedException("Sessione scaduta.");
+            throw new UnauthorizedException("Session expired.");
         }
         if (code < 200 || code >= 300) {
-            throw new IOException(json.optString("error", "Errore server " + code));
+            throw new IOException(json.optString("error", "Server error " + code));
         }
         return json;
     }

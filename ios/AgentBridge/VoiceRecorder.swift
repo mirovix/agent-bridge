@@ -149,11 +149,11 @@ enum VoiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .permissionDenied:
-            return "Permesso del microfono negato: attivalo in Impostazioni → Agent Bridge."
+            return "Microphone permission denied: enable it in Settings → Agent Bridge."
         case .sessionUnavailable:
-            return "Microfono occupato da un'altra app. Chiudila e riprova."
+            return "The microphone is in use by another app. Close it and try again."
         case .recorderUnavailable:
-            return "Non riesco ad avviare la registrazione."
+            return "Couldn't start recording."
         }
     }
 }

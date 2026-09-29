@@ -40,9 +40,9 @@ async function main() {
       if (msg) {
         process.stdout.write(JSON.stringify({
           decision: 'block',
-          reason: `Prompt inviato dal telefono con Agent Bridge:\n\n${msg.prompt}\n\n`
-            + '(Rispondi qui come a un messaggio normale dell\'utente. La risposta si legge anche sul telefono.)',
-          systemMessage: '📱 Prompt ricevuto dal telefono',
+          reason: `Prompt sent from the phone with Agent Bridge:\n\n${msg.prompt}\n\n`
+            + '(Answer here as you would a normal user message. The reply is also shown on the phone.)',
+          systemMessage: '📱 Prompt received from the phone',
         }));
         return;
       }

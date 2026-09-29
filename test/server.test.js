@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { POSIX_MODES, fakeCli } from './helpers.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-bridge-test-'));
@@ -24,7 +25,7 @@ const PASSWORD = 'Correct-Horse-Battery-9';
 const CODEX_HOME = path.join(tmp, 'codex');
 const CODEX_SESSION = '11111111-2222-3333-4444-555555555555';
 const CODEX_ARGS = path.join(tmp, 'codex-args.log');
-const FAKE_CODEX = path.join(tmp, 'fake-codex.mjs');
+let FAKE_CODEX;
 
 process.env.AGENT_BRIDGE_HOME = HOME;
 const { createSecrets } = await import('../src/auth.js');
@@ -68,12 +69,11 @@ test.before(async () => {
     JSON.stringify({ timestamp: new Date().toISOString(), type: 'response_item', payload: { id: 'u1', type: 'message', role: 'user', content: [{ type: 'input_text', text: 'chat esistente' }] } }),
     '',
   ].join('\n'));
-  fs.writeFileSync(FAKE_CODEX, `#!${process.execPath}
-import fs from 'node:fs';
+  FAKE_CODEX = fakeCli(path.join(tmp, 'fake-codex.mjs'), `import fs from 'node:fs';
 fs.appendFileSync(${JSON.stringify(CODEX_ARGS)}, JSON.stringify(process.argv.slice(2)) + '\\n');
 console.log(JSON.stringify({ type: 'thread.started', thread_id: ${JSON.stringify(CODEX_SESSION)} }));
 console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'continuazione riuscita' } }));
-`, { mode: 0o755 });
+`);
   writePrivateJson(CONFIG_PATH, {
     port: PORT,
     workspaces: [WORK],
@@ -87,11 +87,11 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
     },
   });
   writePrivateJson(SECRETS_PATH, await createSecrets(PASSWORD, TOTP, ['AAAA-BBBB-CCCC-DDDD']));
-  server = spawn(process.execPath, [path.join(ROOT, 'src/server.js')], {
+  server = spawn(process.execPath, [path.join(ROOT, 'src', 'server.js')], {
     env: { ...process.env, AGENT_BRIDGE_HOME: HOME, CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'), CODEX_HOME },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
-  await new Promise((resolve) => server.stdout.on('data', (d) => d.toString().includes('in ascolto') && resolve()));
+  await new Promise((resolve) => server.stdout.on('data', (d) => d.toString().includes('listening on') && resolve()));
 });
 
 test.after(() => {
@@ -247,10 +247,10 @@ test('session history lists and reads the desktop conversation', async () => {
 test('invalid and oversized prompt input returns clear client errors', async () => {
   const blank = await authed('POST', '/api/jobs', { agent: 'echo', cwd: WORK, prompt: '   ' });
   assert.equal(blank.status, 400);
-  assert.match(blank.json.error, /vuoto/i);
+  assert.match(blank.json.error, /empty/i);
   const tooLong = await authed('POST', '/api/jobs', { agent: 'echo', cwd: WORK, prompt: 'x'.repeat(20_001) });
   assert.equal(tooLong.status, 400);
-  assert.match(tooLong.json.error, /troppo lungo/i);
+  assert.match(tooLong.json.error, /too long/i);
 });
 
 test('a running job can be cancelled from the app', async () => {
@@ -268,7 +268,7 @@ test('device list identifies the current login and validates revocation ids', as
   assert.ok(list.json.devices.some((device) => device.current));
   const invalid = await authed('POST', '/api/devices/revoke', { id: 'not-a-device' });
   assert.equal(invalid.status, 400);
-  assert.match(invalid.json.error, /non valido/i);
+  assert.match(invalid.json.error, /invalid/i);
 });
 
 test('local mirror channel streams jobs live (token only, never via proxy)', async () => {
@@ -295,7 +295,7 @@ test('local mirror channel streams jobs live (token only, never via proxy)', asy
 test('delivery to a live chat is refused when none is listening', async () => {
   const r = await authed('POST', '/api/jobs', { agent: 'echo', cwd: WORK, prompt: 'ciao', target: 'chat' });
   assert.equal(r.status, 400, 'without a session there is no chat to deliver to');
-  assert.match(r.json.error, /sessione/i);
+  assert.match(r.json.error, /session/i);
 });
 
 test('unknown agents are rejected', async () => {
@@ -326,7 +326,7 @@ test('audit log records logins and jobs, never prompt text', () => {
   assert.match(log, /"login_ok"/);
   assert.match(log, /"job_start"/);
   assert.ok(!log.includes('hello $(touch'));
-  assert.equal(fs.statSync(path.join(HOME, 'audit.log')).mode & 0o077, 0);
+  if (POSIX_MODES) assert.equal(fs.statSync(path.join(HOME, 'audit.log')).mode & 0o077, 0);
 });
 
 test('voice, devices and audit endpoints require login', async () => {

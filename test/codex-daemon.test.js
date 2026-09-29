@@ -12,7 +12,10 @@ const TURN = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
 test('shared Codex daemon resumes and writes to the exact open chat', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-bridge-daemon-'));
-  const socketPath = path.join(dir, 'codex.sock');
+  // Node listens on a named pipe on Windows, on a Unix socket elsewhere.
+  const socketPath = process.platform === 'win32'
+    ? `\\\\.\\pipe\\agent-bridge-test-${process.pid}-${Date.now()}`
+    : path.join(dir, 'codex.sock');
   const calls = [];
   const server = http.createServer();
   const wss = new WebSocketServer({ server });

@@ -8,7 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const HOOK = path.join(ROOT, 'scripts/hooks/stop.js');
+const HOOK = path.join(ROOT, 'scripts', 'hooks', 'stop.js');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-bridge-live-'));
 process.env.AGENT_BRIDGE_HOME = path.join(tmp, 'home');
 const CWD = path.join(tmp, 'work');
@@ -60,7 +60,7 @@ test('a prompt sent from the app lands in the parked chat', async () => {
   const out = await hook.done;
   assert.equal(out.decision, 'block', 'Claude must keep going instead of stopping');
   assert.match(out.reason, /Aggiungi un test di regressione/);
-  assert.match(out.systemMessage, /telefono/);
+  assert.match(out.systemMessage, /phone/);
   assert.ok(msg.id);
   assert.equal(listLive().length, 0, 'the session stops advertising once it has the prompt');
   setArmed(CWD, 0);
@@ -68,7 +68,7 @@ test('a prompt sent from the app lands in the parked chat', async () => {
 
 test('delivery is refused when no chat is listening', () => {
   assert.equal(isLive(SID), false);
-  assert.throws(() => deliver(SID, 'ciao'), /non è più in ascolto/);
+  assert.throws(() => deliver(SID, 'ciao'), /no longer listening/);
 });
 
 test('disarming while parked releases the chat', async () => {

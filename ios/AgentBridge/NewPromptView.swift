@@ -16,17 +16,17 @@ struct NewPromptView: View {
                     HStack(spacing: 13) {
                         BrandMark(size: 54)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("NUOVA MISSIONE").font(.caption2.bold()).tracking(1.8).foregroundStyle(AppTheme.cyan)
-                            Text("Cosa costruiamo?").font(.title2.bold())
+                            Text("NEW MISSION").font(.caption2.bold()).tracking(1.8).foregroundStyle(AppTheme.cyan)
+                            Text("What are we building?").font(.title2.bold())
                         }
                     }
 
-                Text("Agente").font(.caption.bold()).foregroundStyle(.secondary)
+                Text("Agent").font(.caption.bold()).foregroundStyle(.secondary)
                 agentPicker
 
-                Text("Cartella").font(.caption.bold()).foregroundStyle(.secondary)
+                Text("Folder").font(.caption.bold()).foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 12) {
-                    Label(cwd.isEmpty ? "Scegli una cartella" : cwd.abbreviatedPath, systemImage: "folder")
+                    Label(cwd.isEmpty ? "Choose a folder" : cwd.abbreviatedPath, systemImage: "folder")
                         .font(.callout.monospaced())
                         .frame(maxWidth: .infinity, alignment: .leading)
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -38,13 +38,13 @@ struct NewPromptView: View {
                             }
                         }
                     }
-                    Button("Sfoglia cartelle…") { showFolders = true }
+                    Button("Browse folders…") { showFolders = true }
                 }
                 .padding()
                 .glassPanel(cornerRadius: 20)
 
                 Text("Prompt").font(.caption.bold()).foregroundStyle(.secondary)
-                Label("I messaggi continueranno la stessa chat per questo agente e questa cartella.", systemImage: "link.circle.fill")
+                Label("Messages will continue the same chat for this agent and folder.", systemImage: "link.circle.fill")
                     .font(.footnote)
                     .foregroundStyle(AppTheme.mint)
                 if let agent {
@@ -66,7 +66,7 @@ struct NewPromptView: View {
                 .padding()
             }
         }
-        .navigationTitle("Nuovo prompt")
+        .navigationTitle("New prompt")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
@@ -126,7 +126,7 @@ private struct FolderPickerView: View {
             List {
                 if let parent = directory?.parent {
                     Button { Task { await load(parent) } } label: {
-                        Label("Cartella superiore", systemImage: "arrow.up")
+                        Label("Parent folder", systemImage: "arrow.up")
                     }
                 }
                 ForEach(directory?.dirs ?? [], id: \.self) { name in
@@ -137,12 +137,12 @@ private struct FolderPickerView: View {
                 if isLoading { HStack { Spacer(); ProgressView(); Spacer() } }
                 if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
             }
-            .navigationTitle(directory?.path.lastPathComponent ?? "Cartella")
+            .navigationTitle(directory?.path.lastPathComponent ?? "Folder")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Usa") {
+                    Button("Use") {
                         if let path = directory?.path { onSelect(path) }
                         dismiss()
                     }

@@ -10,7 +10,7 @@ import { CONFIG_PATH, DEFAULT_CONFIG, SECRETS_PATH, ensureDataDir, writePrivateJ
 import { generateSecret, otpauthUri, verifyTotp } from '../src/totp.js';
 
 if (!process.stdin.isTTY) {
-  console.error('Esegui il setup da un terminale interattivo.');
+  console.error('Run the setup from an interactive terminal.');
   process.exit(1);
 }
 
@@ -33,38 +33,38 @@ function askHidden(q) {
 
 function passwordProblems(p) {
   const issues = [];
-  if (p.length < 14) issues.push('almeno 14 caratteri');
+  if (p.length < 14) issues.push('at least 14 characters');
   const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(p)).length;
-  if (classes < 3 && p.length < 20) issues.push('almeno 3 tipi tra minuscole, maiuscole, numeri, simboli (o 20+ caratteri)');
+  if (classes < 3 && p.length < 20) issues.push('at least 3 of lowercase, uppercase, digits, symbols (or 20+ characters)');
   return issues;
 }
 
 async function main() {
-  console.log('\n=== Agent Bridge — configurazione sicura ===\n');
+  console.log('\n=== Agent Bridge — secure setup ===\n');
   ensureDataDir();
 
   if (fs.existsSync(SECRETS_PATH)) {
-    const a = await ask('Esiste già una configurazione. Reimpostare password e 2FA? (tutti i dispositivi dovranno rifare il login) s/N', 'N');
-    if (a.toLowerCase() !== 's') { rl.close(); return; }
+    const a = await ask('A configuration already exists. Reset password and 2FA? (every device will have to log in again) y/N', 'N');
+    if (!/^y(es)?$/i.test(a)) { rl.close(); return; }
   }
 
   // --- config ---
   let cfg = DEFAULT_CONFIG;
   if (fs.existsSync(CONFIG_PATH)) {
     cfg = { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) };
-    console.log(`Config esistente mantenuta: ${CONFIG_PATH}`);
+    console.log(`Keeping existing config: ${CONFIG_PATH}`);
   } else {
     let workspaces;
     while (true) {
-      const ws = await ask('Cartelle in cui gli agenti possono lavorare (separate da virgola)', path.join(os.homedir(), 'workspace'));
-      workspaces = ws.split(',').map((s) => s.trim()).filter(Boolean).map((s) => path.resolve(s.replace(/^~/, os.homedir())));
+      const ws = await ask('Folders the agents may work in (comma separated)', path.join(os.homedir(), 'workspace'));
+      workspaces = ws.split(',').map((s) => s.trim()).filter(Boolean).map((s) => path.resolve(s.replace(/^~(?=$|[\\/])/, os.homedir())));
       const missing = workspaces.filter((w) => !fs.existsSync(w) || !fs.statSync(w).isDirectory());
       if (workspaces.length && !missing.length) break;
-      console.log(`  Cartella inesistente: ${missing.join(', ') || '(nessuna)'} — riprova.`);
+      console.log(`  Folder not found: ${missing.join(', ') || '(none)'} — try again.`);
     }
     let allowedOrigins;
     while (true) {
-      const origin = await ask('URL remoto HTTPS (es. https://mio-pc.tailXXXX.ts.net) — premi Invio per lasciarlo vuoto', '');
+      const origin = await ask('Remote HTTPS URL (e.g. https://my-pc.tailXXXX.ts.net) — press Enter to leave empty', '');
       if (!origin) { allowedOrigins = []; break; }
       try {
         const u = new URL(origin);
@@ -72,48 +72,48 @@ async function main() {
         allowedOrigins = [u.origin];
         break;
       } catch {
-        console.log('  Deve essere un indirizzo https://… valido.');
+        console.log('  It must be a valid https://… address.');
       }
     }
     cfg = { ...DEFAULT_CONFIG, workspaces, allowedOrigins };
     writePrivateJson(CONFIG_PATH, cfg);
-    console.log(`Config salvata in ${CONFIG_PATH}`);
+    console.log(`Config saved to ${CONFIG_PATH}`);
   }
 
   // --- password ---
   let password;
   while (true) {
-    password = await askHidden('Nuova password');
+    password = await askHidden('New password');
     const issues = passwordProblems(password);
-    if (issues.length) { console.log(`  Password debole: ${issues.join('; ')}`); continue; }
-    if ((await askHidden('Ripeti password')) !== password) { console.log('  Le password non coincidono.'); continue; }
+    if (issues.length) { console.log(`  Weak password: ${issues.join('; ')}`); continue; }
+    if ((await askHidden('Repeat password')) !== password) { console.log('  Passwords do not match.'); continue; }
     break;
   }
 
   // --- TOTP ---
   const secret = generateSecret();
   const uri = otpauthUri(secret, `${os.userInfo().username}@${os.hostname()}`);
-  console.log('\nScansiona questo QR con un\'app di autenticazione (Aegis, Google Authenticator, 1Password, Authy…):\n');
+  console.log('\nScan this QR code with an authenticator app (Aegis, Google Authenticator, 1Password, Authy…):\n');
   console.log(await QRCode.toString(uri, { type: 'terminal', small: true, errorCorrectionLevel: 'M' }));
-  console.log(`Oppure inserisci a mano la chiave: ${secret.match(/.{1,4}/g).join(' ')}\n`);
+  console.log(`Or enter the key by hand: ${secret.match(/.{1,4}/g).join(' ')}\n`);
   while (true) {
-    const code = (await ask('Inserisci il codice a 6 cifre mostrato dall\'app')).replace(/\s+/g, '');
+    const code = (await ask('Enter the 6-digit code shown by the app')).replace(/\s+/g, '');
     if (verifyTotp(secret, code) !== null) break;
-    console.log('  Codice non valido, riprova (controlla che l\'ora del telefono sia corretta).');
+    console.log('  Invalid code, try again (check that the phone clock is correct).');
   }
 
   // --- recovery codes ---
   const recovery = generateRecoveryCodes();
-  console.log('\nCodici di recupero (monouso, usali al posto del codice 2FA se perdi il telefono).');
-  console.log('Salvali in un password manager: NON verranno mostrati di nuovo.\n');
+  console.log('\nRecovery codes (single use, enter one instead of the 2FA code if you lose your phone).');
+  console.log('Store them in a password manager: they will NOT be shown again.\n');
   for (const c of recovery) console.log(`   ${c}`);
   console.log('');
 
-  console.log('Derivazione chiave (scrypt)…');
+  console.log('Deriving key (scrypt)…');
   const secrets = await createSecrets(password, secret, recovery);
   writePrivateJson(SECRETS_PATH, secrets);
-  console.log(`\nFatto. Segreti salvati (cifrati/hash) in ${SECRETS_PATH}`);
-  console.log('Avvia il server con:  npm start\n');
+  console.log(`\nDone. Secrets saved (encrypted/hashed) to ${SECRETS_PATH}`);
+  console.log('Start the server with:  npm start   (or start it at login: npm run service:install)\n');
   rl.close();
 }
 

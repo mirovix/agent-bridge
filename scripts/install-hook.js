@@ -10,8 +10,10 @@ const HOOK = path.join(path.dirname(fileURLToPath(import.meta.url)), 'hooks', 's
 const FILE = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
 const off = /^(off|remove|uninstall)$/i.test(process.argv[2] || '');
 
-const settings = fs.existsSync(FILE) ? JSON.parse(fs.readFileSync(FILE, 'utf8')) : {};
-const mine = (entry) => JSON.stringify(entry).includes('scripts/hooks/stop.js');
+const exists = fs.existsSync(FILE);
+const settings = exists ? JSON.parse(fs.readFileSync(FILE, 'utf8')) : {};
+// Match both separators: on Windows the path is stored as scripts\\hooks\\stop.js.
+const mine = (entry) => /scripts(?:\/|\\\\)+hooks(?:\/|\\\\)+stop\.js/.test(JSON.stringify(entry));
 
 const hooks = settings.hooks || {};
 const stop = (hooks.Stop || []).filter((e) => !mine(e)); // drop a previous install, keep the rest
@@ -22,14 +24,15 @@ if (!off) {
       command: 'node',
       args: [HOOK],
       timeout: 600,
-      statusMessage: 'In ascolto dei prompt dal telefono…',
+      statusMessage: 'Listening for prompts from the phone…',
     }],
   });
 }
 if (stop.length) hooks.Stop = stop; else delete hooks.Stop;
 if (Object.keys(hooks).length) settings.hooks = hooks; else delete settings.hooks;
 
-fs.copyFileSync(FILE, `${FILE}.bak`);
+if (exists) fs.copyFileSync(FILE, `${FILE}.bak`);
+else fs.mkdirSync(path.dirname(FILE), { recursive: true });
 fs.writeFileSync(FILE, JSON.stringify(settings, null, 2) + '\n');
-console.log(`${off ? 'Hook rimosso da' : 'Hook installato in'} ${FILE} (copia di sicurezza: ${path.basename(FILE)}.bak)`);
-console.log('Apri /hooks in Claude Code (o riavvialo) perché la modifica venga letta.');
+console.log(`${off ? 'Hook removed from' : 'Hook installed in'} ${FILE}${exists ? ` (backup: ${path.basename(FILE)}.bak)` : ''}`);
+console.log('Open /hooks in Claude Code (or restart it) so the change is picked up.');

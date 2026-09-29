@@ -9,7 +9,7 @@ struct ContentView: View {
             if let serverURL = configuration.serverURL {
                 switch api.authState {
                 case .checking:
-                    ProgressView("Connessione a Agent Bridge…")
+                    ProgressView("Connecting to Agent Bridge…")
                         .task(id: serverURL) {
                             api.configure(baseURL: serverURL)
                             await api.restoreSession()
@@ -39,13 +39,13 @@ private struct MainTabView: View {
     var body: some View {
         TabView {
             NavigationStack { SessionsView() }
-                .tabItem { Label("Sessioni", systemImage: "bubble.left.and.bubble.right") }
+                .tabItem { Label("Sessions", systemImage: "bubble.left.and.bubble.right") }
             NavigationStack { NewPromptView() }
-                .tabItem { Label("Nuovo", systemImage: "plus.circle") }
+                .tabItem { Label("New", systemImage: "plus.circle") }
             NavigationStack { JobsView() }
-                .tabItem { Label("Attività", systemImage: "waveform.path.ecg") }
+                .tabItem { Label("Activity", systemImage: "waveform.path.ecg") }
             NavigationStack { NativeSettingsView() }
-                .tabItem { Label("Impostazioni", systemImage: "gearshape") }
+                .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .tint(AppTheme.cyan)
     }

@@ -53,9 +53,9 @@ enum ConfigurationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "Inserisci un indirizzo HTTPS valido, per esempio https://mio-pc.tail1234.ts.net"
+            return "Enter a valid HTTPS address, e.g. https://my-pc.tail1234.ts.net"
         case .unexpectedResponse:
-            return "Il server ha risposto, ma non sembra essere Agent Bridge."
+            return "The server responded, but it doesn't appear to be Agent Bridge."
         }
     }
 }

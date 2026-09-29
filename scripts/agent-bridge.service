@@ -1,4 +1,4 @@
-# Template used by scripts/install-linux-service.sh.
+# Template used by scripts/install-service.js on Linux.
 # The installer replaces @PROJECT_ROOT@, @NODE_BIN@ and @NODE_DIR@.
 [Unit]
 Description=Agent Bridge (remote console for Claude Code / Codex)

@@ -14,32 +14,32 @@ struct NativeSettingsView: View {
 
     var body: some View {
         List {
-            Section("Connessione") {
+            Section("Connection") {
                 LabeledContent("Server", value: configuration.serverURL?.host ?? "—")
                 Button { showConnection = true } label: {
-                    Label("Cambia indirizzo", systemImage: "network")
+                    Label("Change address", systemImage: "network")
                 }
             }
 
-            Section("Durante l’attesa") {
-                Picker("Apri dopo l’invio", selection: $waitingActivity) {
+            Section("While waiting") {
+                Picker("Open after sending", selection: $waitingActivity) {
                     Label("Instagram Reels", systemImage: "play.rectangle.fill").tag(WaitingActivity.reels.rawValue)
                     Label("HappyDEV", systemImage: "gamecontroller.fill").tag(WaitingActivity.happyDev.rawValue)
                 }
-                Text("Puoi cambiare attività anche mentre l’agente sta lavorando.")
+                Text("You can switch activities while the agent is working.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section("Dispositivi collegati") {
+            Section("Connected devices") {
                 if devices.isEmpty { ProgressView() }
                 ForEach(devices) { device in
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(deviceName(device.ua)).fontWeight(.semibold)
-                                if device.current { Text("questo").font(.caption.bold()).foregroundStyle(.green) }
+                                if device.current { Text("this device").font(.caption.bold()).foregroundStyle(.green) }
                             }
-                            Text("attivo \(relativeTime(device.lastSeen)) · \(device.from ?? "?")")
+                            Text("active \(relativeTime(device.lastSeen)) · \(device.from ?? "?")")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -58,13 +58,13 @@ struct NativeSettingsView: View {
                     LabeledContent("PC", value: server.host)
                     LabeledContent("Claude Code", value: server.versions.claude ?? "—")
                     LabeledContent("Codex", value: server.versions.codex ?? "—")
-                    LabeledContent("Voce locale", value: server.voice ? "Whisper attivo" : "Non installata")
+                    LabeledContent("Local voice", value: server.voice ? "Whisper enabled" : "Not installed")
                     LabeledContent("Job", value: "max \(server.maxConcurrentJobs) · \(server.jobTimeoutMinutes) min")
-                    LabeledContent("Modalità pericolose", value: server.allowDangerousModes ? "Attive" : "Disattivate")
+                    LabeledContent("Dangerous modes", value: server.allowDangerousModes ? "Enabled" : "Disabled")
                 } else { ProgressView() }
             }
 
-            Section("Registro di sicurezza") {
+            Section("Security log") {
                 ForEach(audit.prefix(30)) { event in
                     HStack(alignment: .top) {
                         Image(systemName: auditIcon(event.event))
@@ -80,10 +80,10 @@ struct NativeSettingsView: View {
             }
 
             Section {
-                Button("Esci da questo dispositivo", role: .destructive) {
+                Button("Sign out of this device", role: .destructive) {
                     Task { await api.logout() }
                 }
-                Button("Disconnetti tutti e ferma i job", role: .destructive) {
+                Button("Sign out everywhere and stop jobs", role: .destructive) {
                     showLogoutAll = true
                 }
             }
@@ -92,7 +92,7 @@ struct NativeSettingsView: View {
                 Section { Text(errorMessage).foregroundStyle(.red) }
             }
         }
-        .navigationTitle("Impostazioni")
+        .navigationTitle("Settings")
         .scrollContentBackground(.hidden)
         .background(AuroraBackground())
         .refreshable { await load() }
@@ -102,11 +102,11 @@ struct NativeSettingsView: View {
                 .environmentObject(configuration)
         }
         .confirmationDialog(
-            "Disconnettere tutti i dispositivi e fermare i job in corso?",
+            "Sign out all devices and stop running jobs?",
             isPresented: $showLogoutAll,
             titleVisibility: .visible
         ) {
-            Button("Disconnetti tutti", role: .destructive) { Task { await api.logout(all: true) } }
+            Button("Sign out all", role: .destructive) { Task { await api.logout(all: true) } }
         }
     }
 
@@ -130,17 +130,17 @@ struct NativeSettingsView: View {
         if value.contains("Mac OS X") { return "Mac" }
         if value.contains("Windows") { return "Windows" }
         if value.contains("Linux") { return "Linux" }
-        return "Dispositivo"
+        return "Device"
     }
 
     private func auditLabel(_ event: String?) -> String {
         [
-            "login_ok": "Accesso riuscito", "login_failed": "Accesso fallito",
-            "login_blocked": "Accesso bloccato", "logout": "Uscita",
-            "logout_all": "Disconnessi tutti", "device_revoked": "Dispositivo disconnesso",
-            "job_start": "Prompt inviato", "job_end": "Job terminato",
-            "job_cancel": "Job fermato", "server_start": "Server avviato",
-        ][event ?? ""] ?? event ?? "Evento"
+            "login_ok": "Signed in", "login_failed": "Sign-in failed",
+            "login_blocked": "Sign-in blocked", "logout": "Signed out",
+            "logout_all": "All devices signed out", "device_revoked": "Device signed out",
+            "job_start": "Prompt sent", "job_end": "Job finished",
+            "job_cancel": "Job stopped", "server_start": "Server started",
+        ][event ?? ""] ?? event ?? "Event"
     }
 
     private func auditIcon(_ event: String?) -> String {

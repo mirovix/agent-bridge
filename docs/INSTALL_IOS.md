@@ -11,17 +11,16 @@ HTTPS address of an Agent Bridge server reachable through Tailscale.
    unique bundle identifier.
 4. Connect and trust the iPhone, select it as the destination, and press **Run**.
 5. On first launch, enter the URL printed by `tailscale serve status` on the
-   Linux PC, followed by your Agent Bridge password and 2FA code.
+   computer running the server, followed by your Agent Bridge password and 2FA code.
 
 A free Apple account normally requires the development signature to be renewed
 every seven days. TestFlight requires the Apple Developer Program.
 
-## Without a Mac: GitHub Actions
+## Without a Mac: the release IPA
 
-1. Open the repository **Actions** tab.
-2. Run **Build iPhone app (unsigned)**.
-3. Download the `AgentBridge-unsigned-ipa` artifact.
-4. Sign and install it using SideStore or another trusted sideloading tool.
+1. Download `AgentBridge-<version>-ios-unsigned.ipa` from the
+   [latest release](https://github.com/mirovix/agent-bridge/releases/latest).
+2. Sign and install it with SideStore, AltStore or another sideloading tool you trust.
 5. If requested, enable **Developer Mode** and trust the profile under
    **Settings → General → VPN & Device Management**.
 

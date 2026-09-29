@@ -87,15 +87,15 @@ export function lockStatus() {
  * Tailscale Serve every request comes from 127.0.0.1.
  */
 export async function verifyLogin(password, code, meta) {
-  if (loginBusy) return { ok: false, status: 429, error: 'Un altro tentativo è in corso, riprova tra qualche secondo.' };
+  if (loginBusy) return { ok: false, status: 429, error: 'Another login attempt is in progress, try again in a few seconds.' };
   loginBusy = true;
   try {
     const secrets = loadSecrets();
-    if (!secrets) return { ok: false, status: 503, error: 'Server non configurato.' };
+    if (!secrets) return { ok: false, status: 503, error: 'Server not configured.' };
     const now = Date.now();
     if ((secrets.lockout?.lockUntil || 0) > now) {
       audit('login_blocked', meta);
-      return { ok: false, status: 429, error: 'Troppi tentativi falliti. Accesso bloccato temporaneamente.', lockUntil: secrets.lockout.lockUntil };
+      return { ok: false, status: 429, error: 'Too many failed attempts. Login temporarily locked.', lockUntil: secrets.lockout.lockUntil };
     }
 
     const fail = async (reason) => {
@@ -111,7 +111,7 @@ export async function verifyLogin(password, code, meta) {
       audit('login_failed', { ...meta, reason, failures, lockUntil: lockUntil ? new Date(lockUntil).toISOString() : undefined });
       // Constant extra delay on failure.
       await new Promise((r) => setTimeout(r, 500 + crypto.randomInt(500)));
-      return { ok: false, status: 401, error: 'Credenziali non valide.' };
+      return { ok: false, status: 401, error: 'Invalid credentials.' };
     };
 
     if (typeof password !== 'string' || password.length < 1 || password.length > 1024 || typeof code !== 'string' || code.length > 64) {

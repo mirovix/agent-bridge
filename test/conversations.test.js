@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { POSIX_MODES } from './helpers.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-bridge-conversations-'));
 process.env.AGENT_BRIDGE_HOME = tmp;
@@ -22,7 +23,7 @@ test('one canonical conversation is persisted per agent and project', () => {
   assert.equal(getConversation('codex', cwd), next, 'the canonical thread can be deliberately replaced');
   const saved = JSON.parse(fs.readFileSync(path.join(tmp, 'conversations.json'), 'utf8'));
   assert.equal(saved.conversations.length, 1, 'never accumulates duplicate mappings for a project');
-  assert.equal(fs.statSync(path.join(tmp, 'conversations.json')).mode & 0o077, 0);
+  if (POSIX_MODES) assert.equal(fs.statSync(path.join(tmp, 'conversations.json')).mode & 0o077, 0);
   assert.equal(forgetConversation('codex', cwd), true);
   assert.equal(getConversation('codex', cwd), null);
 });

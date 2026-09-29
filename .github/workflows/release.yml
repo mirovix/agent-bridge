@@ -1,0 +1,117 @@
+name: Release
+
+# Push a tag like v1.4.0 to build every client and publish a GitHub Release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Package server
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_TYPE" = tag ] || VERSION="$(node -p "require('./package.json').version")"
+          NAME="agent-bridge-server-$VERSION"
+          mkdir -p "dist/$NAME"
+          cp -r src public scripts package.json package-lock.json README.md LICENSE "dist/$NAME/"
+          rm -rf "dist/$NAME/scripts/__pycache__"
+          (cd dist && zip -qr "$NAME.zip" "$NAME" && tar -czf "$NAME.tar.gz" "$NAME")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  vscode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Package VS Code companion
+        run: python3 scripts/build-vsix.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode
+          path: vscode-extension/*.vsix
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.0"
+      - name: Build APK
+        working-directory: android
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Name APK
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist && cp android/app/build/outputs/apk/debug/app-debug.apk "dist/AgentBridge-$VERSION-android.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/*.apk
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+      - name: Build unsigned iPhone app
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/AgentBridge.xcodeproj -scheme "Agent Bridge" -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" clean build
+      - name: Package IPA
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          APP="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/Agent Bridge.app"
+          test -d "$APP"
+          mkdir -p "$RUNNER_TEMP/payload/Payload" dist
+          ditto "$APP" "$RUNNER_TEMP/payload/Payload/Agent Bridge.app"
+          (cd "$RUNNER_TEMP/payload" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/dist/AgentBridge-$VERSION-ios-unsigned.ipa" Payload)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: dist/*.ipa
+          if-no-files-found: error
+
+  release:
+    needs: [server, vscode, android, ios]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - run: ls -la packages && (cd packages && sha256sum * > SHA256SUMS.txt)
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Agent Bridge ${{ github.ref_name }}
+          generate_release_notes: true
+          files: packages/*

@@ -23,7 +23,7 @@ struct ConnectionSettingsView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Agent Bridge").font(.title2.bold())
-                            Text("Collega l’app al server sul tuo PC")
+                            Text("Connect the app to the server on your PC")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -31,7 +31,7 @@ struct ConnectionSettingsView: View {
                 }
 
                 Section {
-                    TextField("https://mio-pc.tail1234.ts.net", text: $address)
+                    TextField("https://my-pc.tail1234.ts.net", text: $address)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -40,9 +40,9 @@ struct ConnectionSettingsView: View {
                         Text(errorMessage).foregroundStyle(.red).font(.footnote)
                     }
                 } header: {
-                    Text("Indirizzo del server")
+                    Text("Server address")
                 } footer: {
-                    Text("Usa l’indirizzo HTTPS mostrato da “tailscale serve status”. Tailscale deve essere connesso anche sull’iPhone.")
+                    Text("Use the HTTPS address shown by “tailscale serve status”. Tailscale must also be connected on the iPhone.")
                 }
 
                 Section {
@@ -52,24 +52,24 @@ struct ConnectionSettingsView: View {
                         HStack {
                             Spacer()
                             if isChecking { ProgressView().padding(.trailing, 6) }
-                            Text(isChecking ? "Verifica…" : "Verifica e collega").fontWeight(.semibold)
+                            Text(isChecking ? "Verifying…" : "Verify and connect").fontWeight(.semibold)
                             Spacer()
                         }
                     }
                     .disabled(isChecking || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                     if configuration.serverURL != nil {
-                        Button("Salva senza verificare", action: saveAddress)
+                        Button("Save without verifying", action: saveAddress)
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
             }
-            .navigationTitle(configuration.serverURL == nil ? "Configura" : "Connessione")
+            .navigationTitle(configuration.serverURL == nil ? "Set up" : "Connection")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if configuration.serverURL != nil {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Annulla") { dismiss() }
+                        Button("Cancel") { dismiss() }
                     }
                 }
             }
@@ -106,7 +106,7 @@ struct ConnectionSettingsView: View {
             try configuration.save(baseURL.absoluteString)
             dismiss()
         } catch {
-            errorMessage = "Connessione non riuscita: \(error.localizedDescription)"
+            errorMessage = "Connection failed: \(error.localizedDescription)"
         }
     }
 }

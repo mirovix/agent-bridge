@@ -17,9 +17,9 @@ struct SessionsView: View {
             } else if filtered.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "bubble.left.and.bubble.right").font(.largeTitle)
-                    Text(search.isEmpty ? "Nessuna sessione" : "Nessun risultato")
+                    Text(search.isEmpty ? "No sessions" : "No results")
                         .font(.headline)
-                    Text("Avvia un nuovo prompt dalla scheda Nuovo.")
+                    Text("Start a new prompt from the New tab.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -41,11 +41,11 @@ struct SessionsView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(AuroraBackground())
-        .navigationTitle("Sessioni")
-        .searchable(text: $search, prompt: "Cerca nelle sessioni")
+        .navigationTitle("Sessions")
+        .searchable(text: $search, prompt: "Search sessions")
         .safeAreaInset(edge: .top, spacing: 0) {
-            Picker("Agente", selection: $selectedAgent) {
-                Text("Tutte").tag("all")
+            Picker("Agent", selection: $selectedAgent) {
+                Text("All").tag("all")
                 ForEach(api.me?.agents.filter(\.resumable) ?? []) { Text($0.name).tag($0.id) }
             }
             .pickerStyle(.segmented)
@@ -82,7 +82,7 @@ struct SessionsView: View {
     }
 
     private var grouped: [(String, [SessionItem])] {
-        let order = ["Oggi", "Ieri", "Ultimi 7 giorni", "Ultimi 30 giorni", "Più vecchie"]
+        let order = ["Today", "Yesterday", "Last 7 days", "Last 30 days", "Older"]
         let dictionary = Dictionary(grouping: filtered, by: dayBucket)
         return order.compactMap { key in dictionary[key].map { (key, $0) } }
     }
@@ -90,11 +90,11 @@ struct SessionsView: View {
     private func dayBucket(_ item: SessionItem) -> String {
         let date = Date(timeIntervalSince1970: item.updated / 1000)
         let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: date), to: Calendar.current.startOfDay(for: Date())).day ?? 0
-        if days <= 0 { return "Oggi" }
-        if days == 1 { return "Ieri" }
-        if days < 7 { return "Ultimi 7 giorni" }
-        if days < 30 { return "Ultimi 30 giorni" }
-        return "Più vecchie"
+        if days <= 0 { return "Today" }
+        if days == 1 { return "Yesterday" }
+        if days < 7 { return "Last 7 days" }
+        if days < 30 { return "Last 30 days" }
+        return "Older"
     }
 
     private func sessionRow(_ item: SessionItem) -> some View {
@@ -102,7 +102,7 @@ struct SessionsView: View {
             AgentBadge(item.agent)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(item.title?.isEmpty == false ? item.title! : "Senza titolo")
+                    Text(item.title?.isEmpty == false ? item.title! : "Untitled")
                         .font(.headline)
                         .lineLimit(1)
                     Spacer()
@@ -110,7 +110,7 @@ struct SessionsView: View {
                 }
                 HStack(spacing: 6) {
                     if jobs.contains(where: { $0.status == "running" && ($0.sessionId == item.id || $0.resumeOf == item.id) }) {
-                        Label("in corso", systemImage: "circle.dotted").foregroundStyle(.orange)
+                        Label("running", systemImage: "circle.dotted").foregroundStyle(.orange)
                     }
                     if item.busy { Label("VS Code", systemImage: "desktopcomputer") }
                     Label(item.cwd?.lastPathComponent ?? "—", systemImage: "folder")
@@ -154,7 +154,7 @@ struct SessionDetailView: View {
                             Label((detail.session.cwd ?? "—").abbreviatedPath, systemImage: "folder")
                                 .font(.caption).foregroundStyle(.secondary)
                             if detail.truncated {
-                                Text("Sono mostrati solo gli ultimi messaggi.")
+                                Text("Only the most recent messages are shown.")
                                     .font(.caption).foregroundStyle(.orange)
                             }
                         }
@@ -167,7 +167,7 @@ struct SessionDetailView: View {
                         if isRunning {
                             HStack(spacing: 9) {
                                 ProgressView()
-                                Text("\(agent?.name ?? session.agent) sta lavorando…")
+                                Text("\(agent?.name ?? session.agent) is working…")
                                     .foregroundStyle(.secondary)
                             }
                             .id("working")
@@ -190,7 +190,7 @@ struct SessionDetailView: View {
                 }
             }
         }
-        .navigationTitle(detail?.session.title ?? session.title ?? "Sessione")
+        .navigationTitle(detail?.session.title ?? session.title ?? "Session")
         .background(AuroraBackground())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

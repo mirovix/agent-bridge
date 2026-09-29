@@ -65,8 +65,8 @@ struct MessageView: View {
         return date.formatted(date: .omitted, time: .shortened)
     }
     private var toolLabel: String {
-        if message.role == "thinking" { return "Ragionamento" }
-        return message.name ?? (message.role == "tool_result" ? "Output" : "Strumento")
+        if message.role == "thinking" { return "Reasoning" }
+        return message.name ?? (message.role == "tool_result" ? "Output" : "Tool")
     }
     @ViewBuilder private func markdown(_ value: String) -> some View {
         if let attributed = try? AttributedString(markdown: value) { Text(attributed) }
@@ -98,7 +98,7 @@ struct StatusPill: View {
         Label(label, systemImage: icon).font(.caption.bold()).foregroundStyle(color)
             .padding(.horizontal, 8).padding(.vertical, 4).background(color.opacity(0.12), in: Capsule())
     }
-    private var label: String { ["running": "in corso", "done": "completato", "failed": "errore", "cancelled": "fermato"][status] ?? status }
+    private var label: String { ["running": "running", "done": "done", "failed": "error", "cancelled": "stopped"][status] ?? status }
     private var icon: String { ["running": "circle.dotted", "done": "checkmark.circle.fill", "failed": "exclamationmark.circle.fill", "cancelled": "stop.circle.fill"][status] ?? "circle" }
     private var color: Color { ["running": Color.orange, "done": Color.green, "failed": Color.red, "cancelled": Color.secondary][status] ?? .secondary }
 }

@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import http from 'node:http';
@@ -12,6 +11,7 @@ import { forgetConversation, getConversation, setConversation } from './conversa
 import { JobManager, agentList } from './jobs.js';
 import { deliver, listLive } from './live.js';
 import { findSession, listSessions, readSession, tailSession } from './transcripts.js';
+import { IS_WINDOWS, samePath, serviceStatusHint, spawnCommand } from './platform.js';
 import { MAX_AUDIO_BYTES, Voice } from './voice.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -22,7 +22,7 @@ const BUSY_MS = 5 * 60 * 1000;
 
 const cfg = loadConfig();
 if (!cfg || !loadSecrets()) {
-  console.error('Agent Bridge non è configurato. Esegui prima:  npm run setup');
+  console.error('Agent Bridge is not configured. Run first:  npm run setup');
   process.exit(1);
 }
 
@@ -35,12 +35,12 @@ function canonicalConversation(agent, cwd) {
   const remembered = getConversation(agent, cwd);
   if (remembered) {
     const info = findSession(agent, remembered);
-    if (info && info.cwd && path.resolve(info.cwd) === cwd) return info;
+    if (info && info.cwd && samePath(info.cwd, cwd)) return info;
     forgetConversation(agent, cwd);
   }
   // On the first run after this feature is installed, adopt the most recently
   // used thread for this exact agent + project instead of creating one more.
-  const latest = listSessions({ limit: 1000 }).find((item) => item.agent === agent && item.cwd && path.resolve(item.cwd) === cwd);
+  const latest = listSessions({ limit: 1000 }).find((item) => item.agent === agent && item.cwd && samePath(item.cwd, cwd));
   if (latest) setConversation(agent, cwd, latest.id);
   return latest || null;
 }
@@ -97,7 +97,20 @@ jobs.on('job', (job) => {
 });
 const versions = {};
 for (const [id, a] of [['claude', cfg.agents.claude], ['codex', cfg.agents.codex]]) {
-  if (a?.enabled) execFile(a.command, ['--version'], { timeout: 10000 }, (e, out) => { versions[id] = e ? null : String(out).trim().split('\n')[0]; });
+  if (a?.enabled) commandVersion(a.command, (v) => { versions[id] = v; });
+}
+
+// `<cli> --version`, resolving Windows .cmd shims the same way jobs do.
+function commandVersion(command, done) {
+  let child;
+  try {
+    child = spawnCommand(command, ['--version'], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000, windowsHide: true });
+  } catch { return done(null); }
+  let out = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (c) => { out += c; });
+  child.on('error', () => done(null));
+  child.on('close', (code) => done(code === 0 ? out.trim().split(/\r?\n/)[0] : null));
 }
 
 const localOrigins = [`http://127.0.0.1:${cfg.port}`, `http://localhost:${cfg.port}`];
@@ -173,7 +186,7 @@ function readBody(req, max) {
     req.on('data', (c) => {
       size += c.length;
       if (size > max) {
-        reject(Object.assign(new Error('Richiesta troppo grande'), { status: 413 }));
+        reject(Object.assign(new Error('Request too large'), { status: 413 }));
         req.destroy();
       } else chunks.push(c);
     });
@@ -184,18 +197,18 @@ function readBody(req, max) {
 
 function readJson(req, max = MAX_BODY) {
   return new Promise((resolve, reject) => {
-    if (!String(req.headers['content-type'] || '').startsWith('application/json')) return reject(Object.assign(new Error('JSON richiesto'), { status: 415 }));
+    if (!String(req.headers['content-type'] || '').startsWith('application/json')) return reject(Object.assign(new Error('JSON required'), { status: 415 }));
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
       if (size > max) {
-        reject(Object.assign(new Error('Richiesta troppo grande'), { status: 413 }));
+        reject(Object.assign(new Error('Request too large'), { status: 413 }));
         req.destroy();
       } else chunks.push(c);
     });
     req.on('end', () => {
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { reject(Object.assign(new Error('JSON non valido'), { status: 400 })); }
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { reject(Object.assign(new Error('Invalid JSON'), { status: 400 })); }
     });
     req.on('error', reject);
   });
@@ -269,7 +282,7 @@ async function api(req, res, url) {
   const route = `${req.method} ${url.pathname}`;
   const meta = clientMeta(req);
 
-  if (req.method !== 'GET' && !originOk(req)) return send(res, 403, { error: 'Origine non consentita' });
+  if (req.method !== 'GET' && !originOk(req)) return send(res, 403, { error: 'Origin not allowed' });
 
   if (route === 'POST /api/login') {
     const body = await readJson(req);
@@ -287,8 +300,8 @@ async function api(req, res, url) {
   }
 
   const s = sessionFrom(req);
-  if (!s) return send(res, 401, { error: 'Non autenticato' });
-  if (req.method !== 'GET' && req.headers['x-csrf-token'] !== s.csrf) return send(res, 403, { error: 'Token CSRF non valido' });
+  if (!s) return send(res, 401, { error: 'Not authenticated' });
+  if (req.method !== 'GET' && req.headers['x-csrf-token'] !== s.csrf) return send(res, 403, { error: 'Invalid CSRF token' });
 
   if (route === 'POST /api/logout') {
     sessions.revoke(s.id);
@@ -325,7 +338,7 @@ async function api(req, res, url) {
   }
   if (route === 'POST /api/devices/revoke') {
     const b = await readJson(req);
-    if (typeof b.id !== 'string' || !/^[0-9a-f]{64}$/.test(b.id)) return send(res, 400, { error: 'Dispositivo non valido' });
+    if (typeof b.id !== 'string' || !/^[0-9a-f]{64}$/.test(b.id)) return send(res, 400, { error: 'Invalid device' });
     sessions.revoke(b.id);
     audit('device_revoked', { revoked: b.id.slice(0, 12), ...meta });
     return send(res, 200, { ok: true, self: b.id === s.id });
@@ -335,9 +348,9 @@ async function api(req, res, url) {
   }
   if (route === 'POST /api/transcribe') {
     const audio = await readBody(req, MAX_AUDIO_BYTES);
-    if (!audio.length) return send(res, 400, { error: 'Audio vuoto' });
+    if (!audio.length) return send(res, 400, { error: 'Empty audio' });
     try {
-      const text = await voice.transcribe(audio, req.headers['content-type'], url.searchParams.get('lang') ?? 'it');
+      const text = await voice.transcribe(audio, req.headers['content-type'], url.searchParams.get('lang'));
       return send(res, 200, { text });
     } catch (e) {
       return send(res, e.status || 500, { error: e.message });
@@ -350,24 +363,24 @@ async function api(req, res, url) {
   let m = url.pathname.match(/^\/api\/sessions\/(claude|codex)\/([0-9a-f-]{36})$/i);
   if (m && req.method === 'GET') {
     const info = findSession(m[1], m[2]);
-    if (!info) return send(res, 404, { error: 'Sessione non trovata' });
+    if (!info) return send(res, 404, { error: 'Session not found' });
     const { messages, truncated } = readSession(info);
     return send(res, 200, { session: sessionView(info), messages, truncated });
   }
   if (route === 'GET /api/dirs') {
     const r = listDirs(url.searchParams.get('path') || cfg.workspaces[0]);
-    return r ? send(res, 200, r) : send(res, 403, { error: 'Cartella non consentita' });
+    return r ? send(res, 200, r) : send(res, 403, { error: 'Folder not allowed' });
   }
   if (route === 'GET /api/jobs') return send(res, 200, { jobs: jobs.list() });
   m = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})$/);
   if (m && req.method === 'GET') {
     const j = jobs.get(m[1]);
-    return j ? send(res, 200, { job: j.summary(), events: j.events }) : send(res, 404, { error: 'Job non trovato' });
+    return j ? send(res, 200, { job: j.summary(), events: j.events }) : send(res, 404, { error: 'Job not found' });
   }
   m = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})\/cancel$/);
   if (m && req.method === 'POST') {
     const j = jobs.get(m[1]);
-    if (!j) return send(res, 404, { error: 'Job non trovato' });
+    if (!j) return send(res, 404, { error: 'Job not found' });
     jobs.kill(j);
     audit('job_cancel', { job: j.id, ...meta });
     return send(res, 200, { ok: true });
@@ -375,13 +388,13 @@ async function api(req, res, url) {
   if (route === 'POST /api/jobs') {
     const b = await readJson(req, MAX_JOB_BODY);
     const prompt = typeof b.prompt === 'string' ? b.prompt.trim() : '';
-    if (!prompt) return send(res, 400, { error: 'Prompt vuoto' });
-    if (prompt.length > cfg.maxPromptChars) return send(res, 400, { error: 'Prompt troppo lungo' });
+    if (!prompt) return send(res, 400, { error: 'Empty prompt' });
+    if (prompt.length > cfg.maxPromptChars) return send(res, 400, { error: 'Prompt too long' });
     let cwd;
     let sessionId = null;
     if (b.sessionId) {
       const info = findSession(b.agent, b.sessionId);
-      if (!info) return send(res, 404, { error: 'Sessione non trovata' });
+      if (!info) return send(res, 404, { error: 'Session not found' });
       cwd = info.cwd && resolveWorkspaceDir(cfg, info.cwd);
       sessionId = info.id;
     } else {
@@ -389,9 +402,9 @@ async function api(req, res, url) {
       const existing = cwd && canonicalConversation(b.agent, cwd);
       if (existing) sessionId = existing.id;
     }
-    if (!cwd) return send(res, 403, { error: 'Cartella di lavoro fuori dai workspace consentiti' });
+    if (!cwd) return send(res, 403, { error: 'Working folder is outside the allowed workspaces' });
     if (b.target === 'chat') {
-      if (!sessionId) return send(res, 400, { error: 'Serve una sessione esistente' });
+      if (!sessionId) return send(res, 400, { error: 'An existing session is required' });
       try {
         const msg = deliver(sessionId, prompt);
         audit('chat_delivery', { sessionId, delivery: msg.id, promptChars: prompt.length, ...meta });
@@ -410,7 +423,7 @@ async function api(req, res, url) {
       return send(res, 400, { error: e.message });
     }
   }
-  return send(res, 404, { error: 'Non trovato' });
+  return send(res, 404, { error: 'Not found' });
 }
 
 // ---------- HTTP server ----------
@@ -420,7 +433,7 @@ const server = http.createServer(async (req, res) => {
   if (!allowedHosts.has(req.headers.host)) {
     // Blocks DNS-rebinding and requests that did not come through an allowed origin.
     res.writeHead(421, { 'Content-Type': 'text/plain' });
-    return res.end('Host non consentito');
+    return res.end('Host not allowed');
   }
   let url;
   try { url = new URL(req.url, 'http://x'); } catch { res.writeHead(400); return res.end(); }
@@ -442,7 +455,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not found');
   } catch (e) {
-    if (!res.headersSent) send(res, e.status || 500, { error: e.status ? e.message : 'Errore interno' });
+    if (!res.headersSent) send(res, e.status || 500, { error: e.status ? e.message : 'Internal error' });
     if (!e.status) console.error(e);
   }
 });
@@ -531,7 +544,7 @@ setInterval(() => {
 
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
-    console.error(`La porta ${cfg.port} è già in uso: Agent Bridge è probabilmente già in esecuzione (systemctl --user status agent-bridge).`);
+    console.error(`Port ${cfg.port} is already in use: Agent Bridge is probably already running (${serviceStatusHint()}).`);
     process.exit(1);
   }
   throw e;
@@ -539,9 +552,9 @@ server.on('error', (e) => {
 
 server.listen(cfg.port, cfg.host, () => {
   audit('server_start', { host: cfg.host, port: cfg.port });
-  console.log(`Agent Bridge in ascolto su http://${cfg.host}:${cfg.port} (solo locale)`);
-  if (cfg.allowedOrigins.length) console.log(`Origini remote consentite: ${cfg.allowedOrigins.join(', ')}`);
-  else console.log(`Nessuna origine remota configurata: aggiungi l'URL di Tailscale in ${CONFIG_PATH} (allowedOrigins).`);
+  console.log(`Agent Bridge listening on http://${cfg.host}:${cfg.port} (local only)`);
+  if (cfg.allowedOrigins.length) console.log(`Allowed remote origins: ${cfg.allowedOrigins.join(', ')}`);
+  else console.log(`No remote origin configured: add your Tailscale URL to ${CONFIG_PATH} (allowedOrigins).`);
 });
 
 function shutdown() {
@@ -552,3 +565,5 @@ function shutdown() {
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+// Ctrl+Break in a Windows console (SIGTERM is never delivered there).
+if (IS_WINDOWS) process.on('SIGBREAK', shutdown);

@@ -20,7 +20,7 @@ struct LoginView: View {
                         .padding(.top, 54)
                     Text("Agent Bridge")
                         .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    Text("Claude Code, Codex e i tuoi agenti dal telefono.")
+                    Text("Claude Code, Codex and your agents, from your phone.")
                         .foregroundStyle(.white.opacity(0.68))
                         .multilineTextAlignment(.center)
 
@@ -30,7 +30,7 @@ struct LoginView: View {
                             .submitLabel(.next)
                             .padding(13)
                             .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 13))
-                        TextField(recoveryMode ? "Codice di recupero" : "Codice a 6 cifre", text: $code)
+                        TextField(recoveryMode ? "Recovery code" : "6-digit code", text: $code)
                             .textContentType(.oneTimeCode)
                             .keyboardType(recoveryMode ? .asciiCapable : .numberPad)
                             .padding(13)
@@ -59,7 +59,7 @@ struct LoginView: View {
                         } label: {
                             HStack {
                                 if isBusy { ProgressView().tint(.white) }
-                                Text(isBusy ? "Verifica…" : "Accedi").fontWeight(.semibold)
+                                Text(isBusy ? "Verifying…" : "Sign in").fontWeight(.semibold)
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
@@ -68,7 +68,7 @@ struct LoginView: View {
                         .tint(AppTheme.violet)
                         .disabled(isBusy || password.isEmpty || code.isEmpty)
 
-                        Button(recoveryMode ? "Usa il codice 2FA" : "Usa un codice di recupero") {
+                        Button(recoveryMode ? "Use 2FA code" : "Use a recovery code") {
                             recoveryMode.toggle()
                             code = ""
                             errorMessage = nil
@@ -78,7 +78,7 @@ struct LoginView: View {
                     .padding(20)
                     .glassPanel(cornerRadius: 24)
 
-                    Label("Password + 2FA · connessione cifrata", systemImage: "lock.shield")
+                    Label("Password + 2FA · encrypted connection", systemImage: "lock.shield")
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.62))
                     }

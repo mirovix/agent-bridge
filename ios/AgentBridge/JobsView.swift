@@ -13,22 +13,22 @@ struct JobsView: View {
             } else if jobs.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "waveform.path.ecg").font(.largeTitle)
-                    Text("Nessuna attività").font(.headline)
-                    Text("Qui appariranno i prompt inviati dall’app.")
+                    Text("No activity").font(.headline)
+                    Text("Prompts sent from the app will appear here.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 50)
             } else {
                 if !running.isEmpty {
-                    Section("In corso") { ForEach(running) { row($0) } }
+                    Section("Running") { ForEach(running) { row($0) } }
                 }
                 if !completed.isEmpty {
-                    Section("Completate") { ForEach(completed) { row($0) } }
+                    Section("Completed") { ForEach(completed) { row($0) } }
                 }
             }
         }
-        .navigationTitle("Attività")
+        .navigationTitle("Activity")
         .scrollContentBackground(.hidden)
         .background(AuroraBackground())
         .refreshable { await load() }
@@ -56,7 +56,7 @@ struct JobsView: View {
                     Text(job.promptPreview).font(.headline).lineLimit(2)
                     HStack {
                         StatusPill(status: job.status)
-                        if job.fork { Label("copia", systemImage: "arrow.triangle.branch") }
+                        if job.fork { Label("fork", systemImage: "arrow.triangle.branch") }
                         Spacer()
                         Text(relativeTime(job.started))
                     }
@@ -93,7 +93,7 @@ struct JobDetailView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             StatusPill(status: detail.job.status)
-                            if detail.job.fork { Label("copia", systemImage: "arrow.triangle.branch").font(.caption) }
+                            if detail.job.fork { Label("fork", systemImage: "arrow.triangle.branch").font(.caption) }
                         }
                         Label(detail.job.cwd.abbreviatedPath, systemImage: "folder")
                             .font(.caption.monospaced()).foregroundStyle(.secondary)
@@ -108,7 +108,7 @@ struct JobDetailView: View {
                                     do { try await api.cancelJob(id: id); await load() }
                                     catch { errorMessage = error.localizedDescription }
                                 }
-                            } label: { Label("Ferma", systemImage: "stop.fill") }
+                            } label: { Label("Stop", systemImage: "stop.fill") }
                             .buttonStyle(.bordered)
                         }
                     }
@@ -117,7 +117,7 @@ struct JobDetailView: View {
                         MessageView(message: event, agentName: agentName)
                     }
                     if detail.job.status == "running" {
-                        HStack { ProgressView(); Text("L’agente sta lavorando…").foregroundStyle(.secondary) }
+                        HStack { ProgressView(); Text("The agent is working…").foregroundStyle(.secondary) }
                     }
                 } else {
                     HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 60)
@@ -126,7 +126,7 @@ struct JobDetailView: View {
             }
             .padding()
         }
-        .navigationTitle("Attività")
+        .navigationTitle("Activity")
         .navigationBarTitleDisplayMode(.inline)
         .background(AuroraBackground())
         .toolbar {
@@ -144,7 +144,7 @@ struct JobDetailView: View {
     }
 
     private var agentName: String {
-        guard let id = detail?.job.agent else { return "Agente" }
+        guard let id = detail?.job.agent else { return "Agent" }
         return api.me?.agents.first(where: { $0.id == id })?.name ?? id
     }
     private var visibleEvents: [BridgeMessage] {

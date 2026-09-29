@@ -5,14 +5,15 @@
 import { setArmed } from '../../src/live.js';
 
 const [cwd, arg = '60'] = process.argv.slice(2);
+// 'spegni' (Italian for "off") is still accepted for existing /telefono users.
 const off = /^(off|0|no|stop|spegni)$/i.test(arg.trim());
 const minutes = off ? 0 : Math.min(240, Math.max(1, parseInt(arg, 10) || 60));
 
 try {
   setArmed(cwd, minutes);
   console.log(off
-    ? 'Ascolto disattivato: i prompt dal telefono torneranno a girare in un processo separato.'
-    : `In ascolto per ${minutes} minuti: dall'app, in questa sessione, attiva "Invia alla chat di VS Code".`);
+    ? 'Listening off: prompts from the phone will run in a separate process again.'
+    : `Listening for ${minutes} minutes: in the app, open this session and turn on "Send to the VS Code chat".`);
 } catch (e) {
-  console.log(`Non sono riuscito ad attivare l'ascolto: ${e.message}`);
+  console.log(`Could not start listening: ${e.message}`);
 }

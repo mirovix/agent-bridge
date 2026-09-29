@@ -18,7 +18,7 @@ export const isSessionId = (id) => typeof id === 'string' && UUID_RE.test(id);
 
 const clip = (s, n = MAX_TEXT) => {
   s = typeof s === 'string' ? s : s == null ? '' : JSON.stringify(s);
-  return s.length > n ? `${s.slice(0, n)}\n… [${s.length - n} caratteri omessi]` : s;
+  return s.length > n ? `${s.slice(0, n)}\n… [${s.length - n} characters omitted]` : s;
 };
 
 const isMetaText = (t) => {
@@ -35,7 +35,7 @@ function toolSummary(name, input) {
 
 function flattenContent(c) {
   if (typeof c === 'string') return c;
-  if (Array.isArray(c)) return c.map((x) => (typeof x === 'string' ? x : x?.text ?? (x?.type === 'image' ? '[immagine]' : ''))).join('\n');
+  if (Array.isArray(c)) return c.map((x) => (typeof x === 'string' ? x : x?.text ?? (x?.type === 'image' ? '[image]' : ''))).join('\n');
   return c == null ? '' : JSON.stringify(c);
 }
 
@@ -55,7 +55,7 @@ export function parseClaudeLine(d) {
       } else if (c.type === 'tool_result') {
         out.push({ id, role: 'tool_result', text: clip(flattenContent(c.content), 3000), ts, error: !!c.is_error });
       } else if (c.type === 'image') {
-        out.push({ id, role: 'user', text: '[immagine]', ts });
+        out.push({ id, role: 'user', text: '[image]', ts });
       }
     });
   } else if (d.type === 'assistant' && m) {
@@ -157,7 +157,7 @@ function readHead(file) {
 }
 
 function firstPrompt(messages) {
-  const m = messages.find((x) => x.role === 'user' && !x.meta && x.text && x.text !== '[immagine]');
+  const m = messages.find((x) => x.role === 'user' && !x.meta && x.text && x.text !== '[image]');
   return m ? m.text.replace(/\s+/g, ' ').trim().slice(0, 140) : '';
 }
 

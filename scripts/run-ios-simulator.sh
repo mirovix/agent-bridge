@@ -2,8 +2,8 @@
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "Il simulatore iPhone ufficiale richiede macOS e Xcode." >&2
-  echo "Su Linux usa l'iPhone fisico; copia il progetto su un Mac per eseguire questo script." >&2
+  echo "The official iPhone simulator requires macOS and Xcode." >&2
+  echo "On Linux or Windows use a physical iPhone; copy the project to a Mac to run this script." >&2
   exit 2
 fi
 
@@ -29,4 +29,4 @@ xcodebuild \
 app="$derived_data/Build/Products/Debug-iphonesimulator/Agent Bridge.app"
 xcrun simctl install booted "$app"
 xcrun simctl launch booted com.agentbridge.ios
-echo "Agent Bridge è aperta nel simulatore iPhone."
+echo "Agent Bridge is open in the iPhone simulator."

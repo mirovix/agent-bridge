@@ -2,15 +2,16 @@
 
 The native Android client supports Android 8 (API 26) and newer.
 
-## Install the GitHub Actions APK
+## Install the APK
 
-1. Open **Actions → Android debug APK → Run workflow**.
-2. Download the `AgentBridge-Android-debug` artifact.
-3. Extract `app-debug.apk`, transfer it to the phone, and open it.
-4. Temporarily allow installation from that file manager or browser when
-   Android asks.
-5. Start Agent Bridge and enter the HTTPS URL printed by
-   `tailscale serve status` on the Linux PC.
+1. On the phone, download `AgentBridge-<version>-android.apk` from the
+   [latest release](https://github.com/mirovix/agent-bridge/releases/latest).
+2. Open it. When Android asks, allow installation from your browser or file
+   manager for this one install.
+3. Start Agent Bridge and enter the HTTPS address printed by
+   `tailscale serve status` on your computer, then your password and 2FA code.
+
+To update, install the newer APK over the old one: your settings are kept.
 
 ## Build with Android Studio
 

@@ -129,7 +129,7 @@ final class APIClient: ObservableObject {
         try await get("api/server-info")
     }
 
-    func transcribe(data: Data, mimeType: String, language: String = "it") async throws -> String {
+    func transcribe(data: Data, mimeType: String, language: String = Locale.current.language.languageCode?.identifier ?? "en") async throws -> String {
         guard let url = makeURL("api/transcribe?lang=\(language)") else { throw APIError.notConfigured }
         var request = baseRequest(url: url, method: "POST")
         // The first local Whisper request can spend time loading the model.
@@ -195,7 +195,7 @@ final class APIClient: ObservableObject {
             throw APIError.unauthorized
         }
         guard (200..<300).contains(http.statusCode) else {
-            let message = (try? JSONDecoder().decode(ServerError.self, from: data).error) ?? "Errore server \(http.statusCode)"
+            let message = (try? JSONDecoder().decode(ServerError.self, from: data).error) ?? "Server error \(http.statusCode)"
             throw APIError.server(message)
         }
         do {

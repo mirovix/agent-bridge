@@ -38,8 +38,8 @@ async function openInChat(job) {
 function onJobStart(job) {
   lastJob = job;
   if (cfg('notify')) {
-    const shared = job.transport === 'shared-chat' ? ' nella stessa chat' : '';
-    vscode.window.showInformationMessage(`📱 Prompt iPhone → ${AGENTS[job.agent] || job.agent}${shared}`, 'Apri chat')
+    const shared = job.transport === 'shared-chat' ? ' in the same chat' : '';
+    vscode.window.showInformationMessage(`📱 Phone prompt → ${AGENTS[job.agent] || job.agent}${shared}`, 'Open chat')
       .then((answer) => answer && openInChat(job));
   }
 }
@@ -50,8 +50,8 @@ function onJobUpdate(job) {
   if (job.status === 'running') return;
   if (cfg('openInChat') && ownsFolder(job)) openInChat(lastJob).catch(() => {});
   if (cfg('notify')) {
-    const label = job.status === 'done' ? 'completato' : job.status === 'cancelled' ? 'fermato' : 'terminato con errore';
-    vscode.window.showInformationMessage(`${AGENTS[job.agent] || job.agent}: prompt ${label}.`, 'Apri chat')
+    const label = job.status === 'done' ? 'completed' : job.status === 'cancelled' ? 'stopped' : 'failed with an error';
+    vscode.window.showInformationMessage(`${AGENTS[job.agent] || job.agent}: prompt ${label}.`, 'Open chat')
       .then((answer) => answer && openInChat(lastJob));
   }
 }
@@ -59,8 +59,8 @@ function onJobUpdate(job) {
 function setStatus(connected, detail) {
   status.text = connected ? '$(link) Agent Bridge' : '$(debug-disconnect) Agent Bridge';
   status.tooltip = connected
-    ? 'Collegato: i prompt del telefono entrano nella chat, senza terminali'
-    : `Non collegato${detail ? `: ${detail}` : ''}`;
+    ? 'Connected: phone prompts go straight into the chat, no terminals'
+    : `Not connected${detail ? `: ${detail}` : ''}`;
   status.show();
 }
 
@@ -78,12 +78,12 @@ function connect() {
     token = saved.token;
     port = saved.port || port;
   } catch {
-    setStatus(false, 'server non ancora avviato');
+    setStatus(false, 'server not started yet');
     return scheduleReconnect(10_000);
   }
   request = http.get({ host: '127.0.0.1', port, path: '/local/events', headers: { Authorization: `Bearer ${token}`, Host: `127.0.0.1:${port}` } }, (response) => {
     if (response.statusCode !== 200) {
-      setStatus(false, `risposta ${response.statusCode}`);
+      setStatus(false, `response ${response.statusCode}`);
       response.resume();
       return scheduleReconnect(10_000);
     }
@@ -110,10 +110,10 @@ function connect() {
         else if (event === 'hello' && message.running?.length) lastJob = message.running.at(-1);
       }
     });
-    response.on('end', () => { setStatus(false, 'connessione chiusa'); scheduleReconnect(); });
-    response.on('error', () => { setStatus(false, 'connessione persa'); scheduleReconnect(); });
+    response.on('end', () => { setStatus(false, 'connection closed'); scheduleReconnect(); });
+    response.on('error', () => { setStatus(false, 'connection lost'); scheduleReconnect(); });
   });
-  request.on('error', () => { setStatus(false, 'server spento'); scheduleReconnect(); });
+  request.on('error', () => { setStatus(false, 'server offline'); scheduleReconnect(); });
 }
 
 function activate(context) {
@@ -123,14 +123,14 @@ function activate(context) {
     status,
     vscode.commands.registerCommand('agentBridge.showLast', () => {
       if (lastJob) openInChat(lastJob);
-      else vscode.window.showInformationMessage('Nessun prompt ricevuto dal telefono in questa sessione.');
+      else vscode.window.showInformationMessage('No prompt received from the phone in this session.');
     }),
     vscode.commands.registerCommand('agentBridge.openApp', () => vscode.env.openExternal(vscode.Uri.parse(`http://127.0.0.1:${port}/`))),
     vscode.commands.registerCommand('agentBridge.reconnect', connect),
     vscode.commands.registerCommand('agentBridge.openSession', (agent, sessionId) => openInChat({ agent, sessionId })),
     { dispose: () => { disposed = true; clearTimeout(retryTimer); request?.destroy(); } },
   );
-  setStatus(false, 'connessione…');
+  setStatus(false, 'connecting…');
   connect();
 }
 

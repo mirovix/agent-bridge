@@ -1,6 +1,6 @@
 {
   "name": "agent-bridge",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "description": "Secure remote web console for Claude Code, Codex and other AI coding agents running on your PC",
   "private": true,
   "type": "module",
@@ -10,9 +10,10 @@
   "scripts": {
     "setup": "node scripts/setup.js",
     "start": "node src/server.js",
-    "service:install": "bash scripts/install-linux-service.sh",
+    "service:install": "node scripts/install-service.js install",
+    "service:uninstall": "node scripts/install-service.js uninstall",
     "unlock": "node scripts/unlock.js",
-    "test": "node --test test/*.test.js",
+    "test": "node scripts/run-tests.js",
     "hook:install": "node scripts/install-hook.js"
   },
   "license": "MIT",

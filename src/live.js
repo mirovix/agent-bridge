@@ -4,11 +4,11 @@
 // /telefono arms a working directory (the session id is unknown at that point);
 // the Stop hook (scripts/hooks/stop.js) picks the arm up, parks at the end of the
 // turn and polls the inbox, which the server writes to. Both sides only ever touch
-// files inside ~/.agent-bridge (mode 0700), so nothing is reachable from the network.
+// files inside the data dir (~/.agent-bridge, mode 0700), so nothing is reachable from the network.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR } from './config.js';
+import { DATA_DIR, replaceFile } from './config.js';
 
 const ARMED_DIR = path.join(DATA_DIR, 'armed'); // keyed by cwd, written by /telefono
 const LIVE_DIR = path.join(DATA_DIR, 'live'); // keyed by session id, written by the parked hook
@@ -17,7 +17,9 @@ const INBOX_DIR = path.join(DATA_DIR, 'inbox'); // keyed by session id, written 
 const HEARTBEAT_STALE_MS = 16 * 1000;
 const UUID = /^[0-9a-f-]{36}$/i;
 
-const key = (cwd) => crypto.createHash('sha256').update(path.resolve(cwd)).digest('hex').slice(0, 32);
+// Windows paths are case-insensitive (the hook may report c:\\ where /telefono saw C:\\).
+const normCwd = (cwd) => (process.platform === 'win32' ? path.resolve(cwd).toLowerCase() : path.resolve(cwd));
+const key = (cwd) => crypto.createHash('sha256').update(normCwd(cwd)).digest('hex').slice(0, 32);
 const armedPath = (cwd) => path.join(ARMED_DIR, `${key(cwd)}.json`);
 const livePath = (id) => path.join(LIVE_DIR, `${id}.json`);
 const inboxPath = (id) => path.join(INBOX_DIR, `${id}.json`);
@@ -26,7 +28,7 @@ function writeJson(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 });
-  fs.renameSync(tmp, file);
+  replaceFile(tmp, file);
 }
 
 function readJson(file) {
@@ -37,7 +39,7 @@ function readJson(file) {
 
 /** Arm (or, with minutes = 0, disarm) the chat running in `cwd`. */
 export function setArmed(cwd, minutes) {
-  if (typeof cwd !== 'string' || !cwd.trim()) throw new Error('cartella non valida');
+  if (typeof cwd !== 'string' || !cwd.trim()) throw new Error('invalid folder');
   if (!minutes) {
     fs.rmSync(armedPath(cwd), { force: true });
     return null;
@@ -97,8 +99,8 @@ export const isLive = (sessionId) => listLive().some((r) => r.sessionId === sess
 
 /** Hand a prompt to the parked session. Throws if it is not listening. */
 export function deliver(sessionId, prompt) {
-  if (!isLive(sessionId)) throw new Error('La chat di VS Code non è più in ascolto');
-  if (fs.existsSync(inboxPath(sessionId))) throw new Error('Un altro prompt è già in consegna');
+  if (!isLive(sessionId)) throw new Error('The VS Code chat is no longer listening');
+  if (fs.existsSync(inboxPath(sessionId))) throw new Error('Another prompt is already being delivered');
   const msg = { id: crypto.randomUUID(), prompt, ts: Date.now() };
   writeJson(inboxPath(sessionId), msg);
   return msg;

@@ -25,11 +25,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Agent Bridge usa la fotocamera solo quando scegli di allegare una foto a un prompt.</string>
+	<string>Agent Bridge uses the camera only when you choose to attach a photo to a prompt.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Agent Bridge usa il microfono per dettare i prompt e invia l’audio esclusivamente al tuo PC.</string>
+	<string>Agent Bridge uses the microphone to dictate prompts and sends the audio only to your PC.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Agent Bridge accede alle foto solo quando scegli un’immagine da allegare a un prompt.</string>
+	<string>Agent Bridge accesses your photos only when you choose an image to attach to a prompt.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchScreen</key>

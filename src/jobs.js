@@ -1,6 +1,6 @@
 // Runs agent CLIs headlessly. Commands are spawned directly (never through a
 // shell) and the prompt is passed on stdin, so prompt text can never become shell syntax.
-import { spawn } from 'node:child_process';
+// On Windows, npm .cmd shims are unwrapped to `node script.js` (see platform.js).
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
@@ -9,6 +9,7 @@ import path from 'node:path';
 import { audit } from './auth.js';
 import { CodexDaemonTurn, codexDaemonEnabled } from './codex-daemon.js';
 import { DATA_DIR } from './config.js';
+import { killTree, spawnCommand, treeSpawnOptions } from './platform.js';
 import { parseClaudeLine } from './transcripts.js';
 
 export const MODES = {
@@ -18,11 +19,11 @@ export const MODES = {
 
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const CLAUDE_MODELS = [
-  { id: '', label: 'Predefinito', efforts: CLAUDE_EFFORTS },
-  { id: 'fable', label: 'Fable — il più capace', efforts: CLAUDE_EFFORTS },
+  { id: '', label: 'Default', efforts: CLAUDE_EFFORTS },
+  { id: 'fable', label: 'Fable — most capable', efforts: CLAUDE_EFFORTS },
   { id: 'opus', label: 'Opus', efforts: CLAUDE_EFFORTS },
-  { id: 'sonnet', label: 'Sonnet — equilibrato', efforts: CLAUDE_EFFORTS },
-  { id: 'haiku', label: 'Haiku — veloce ed economico', efforts: CLAUDE_EFFORTS },
+  { id: 'sonnet', label: 'Sonnet — balanced', efforts: CLAUDE_EFFORTS },
+  { id: 'haiku', label: 'Haiku — fast and cheap', efforts: CLAUDE_EFFORTS },
 ];
 
 // Model names and effort levels end up as CLI arguments: only plain tokens are allowed,
@@ -76,7 +77,7 @@ function codexModels() {
   const def = list.find((m) => m.id === defaultModel);
   const fallbackEfforts = ['low', 'medium', 'high', 'xhigh'];
   return [
-    { id: '', label: `Predefinito${defaultModel ? ` (${defaultModel}${defaultEffort ? `, ${defaultEffort}` : ''})` : ''}`, efforts: def?.efforts || fallbackEfforts },
+    { id: '', label: `Default${defaultModel ? ` (${defaultModel}${defaultEffort ? `, ${defaultEffort}` : ''})` : ''}`, efforts: def?.efforts || fallbackEfforts },
     ...list,
   ];
 }
@@ -103,19 +104,19 @@ function allowedModes(cfg, agent) {
 /** Validate base64 images from the client. Returns [{ mediaType, data, bytes }]. */
 export function validateImages(images) {
   if (images == null) return [];
-  if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new Error(`Massimo ${MAX_IMAGES} immagini`);
+  if (!Array.isArray(images) || images.length > MAX_IMAGES) throw new Error(`At most ${MAX_IMAGES} images`);
   return images.map((img) => {
     const mediaType = img?.mediaType;
-    if (!IMAGE_TYPES[mediaType] || typeof img.data !== 'string') throw new Error('Formato immagine non supportato');
+    if (!IMAGE_TYPES[mediaType] || typeof img.data !== 'string') throw new Error('Unsupported image format');
     const bytes = Buffer.from(img.data, 'base64');
-    if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error('Immagine troppo grande');
+    if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error('Image too large');
     const magic = {
       'image/png': bytes.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])),
       'image/jpeg': bytes[0] === 0xff && bytes[1] === 0xd8,
       'image/gif': bytes.subarray(0, 3).toString('latin1') === 'GIF',
       'image/webp': bytes.subarray(8, 12).toString('latin1') === 'WEBP',
     }[mediaType];
-    if (!magic) throw new Error('Il contenuto non corrisponde al tipo di immagine');
+    if (!magic) throw new Error('Content does not match the image type');
     return { mediaType, data: bytes.toString('base64'), bytes };
   });
 }
@@ -165,14 +166,14 @@ function buildCommand(cfg, { agent, sessionId, fork, mode, model, effort, prompt
 function normalizeClaude(job, d) {
   if (d.type === 'system' && d.subtype === 'init') {
     if (d.session_id) job.setSession(d.session_id);
-    return [{ role: 'system', text: `Sessione ${d.session_id} · modello ${d.model || '?'} · permessi ${d.permissionMode || job.mode}` }];
+    return [{ role: 'system', text: `Session ${d.session_id} · model ${d.model || '?'} · permissions ${d.permissionMode || job.mode}` }];
   }
   if (d.type === 'assistant' || d.type === 'user') {
     return parseClaudeLine({ ...d, uuid: d.uuid || crypto.randomUUID(), timestamp: new Date().toISOString() });
   }
   if (d.type === 'result') {
     const cost = typeof d.total_cost_usd === 'number' ? ` · $${d.total_cost_usd.toFixed(4)}` : '';
-    return [{ role: d.is_error ? 'error' : 'system', text: `Fine (${d.subtype || 'ok'})${cost}${d.is_error && d.result ? `: ${clip(d.result)}` : ''}` }];
+    return [{ role: d.is_error ? 'error' : 'system', text: `Done (${d.subtype || 'ok'})${cost}${d.is_error && d.result ? `: ${clip(d.result)}` : ''}` }];
   }
   return [];
 }
@@ -180,12 +181,12 @@ function normalizeClaude(job, d) {
 function normalizeCodex(job, d) {
   if (d.type === 'thread.started') {
     if (d.thread_id) job.setSession(d.thread_id);
-    return [{ role: 'system', text: `Sessione ${d.thread_id}` }];
+    return [{ role: 'system', text: `Session ${d.thread_id}` }];
   }
   if (d.type === 'turn.failed' || d.type === 'error') return [{ role: 'error', text: clip(d.error?.message || d.message || JSON.stringify(d)) }];
   if (d.type === 'turn.completed') {
     const u = d.usage;
-    return [{ role: 'system', text: `Fine turno${u ? ` · token in ${u.input_tokens ?? '?'} / out ${u.output_tokens ?? '?'}` : ''}` }];
+    return [{ role: 'system', text: `Turn finished${u ? ` · token in ${u.input_tokens ?? '?'} / out ${u.output_tokens ?? '?'}` : ''}` }];
   }
   if (d.type !== 'item.completed' || !d.item) return [];
   const it = d.item;
@@ -264,26 +265,26 @@ export class JobManager extends EventEmitter {
   start({ agent, sessionId, fork, cwd, mode, model, effort, prompt, images }, who) {
     const cfg = this.cfg;
     const known = agentList(cfg).find((a) => a.id === agent);
-    if (!known) throw new Error('Agente non disponibile');
-    if (sessionId && !known.resumable) throw new Error('Questo agente non supporta la ripresa di sessioni');
+    if (!known) throw new Error('Agent not available');
+    if (sessionId && !known.resumable) throw new Error('This agent cannot resume sessions');
     fork = !!(fork && sessionId);
-    if (fork && !known.fork) throw new Error('Questo agente non supporta la copia di sessioni');
+    if (fork && !known.fork) throw new Error('This agent cannot fork sessions');
     if (known.modes.length) {
       mode ||= known.defaultMode;
-      if (!known.modes.includes(mode)) throw new Error('Modalità permessi non consentita');
+      if (!known.modes.includes(mode)) throw new Error('Permission mode not allowed');
     } else {
       mode = null;
     }
     model = model || '';
     effort = effort || '';
     const m = known.models.find((x) => x.id === model);
-    if (known.models.length ? !m : model) throw new Error('Modello non disponibile');
-    if (effort && (!m || !m.efforts.includes(effort))) throw new Error('Livello di ragionamento non disponibile per questo modello');
-    if ((model && !SAFE_TOKEN.test(model)) || (effort && !SAFE_TOKEN.test(effort))) throw new Error('Valore non valido');
+    if (known.models.length ? !m : model) throw new Error('Model not available');
+    if (effort && (!m || !m.efforts.includes(effort))) throw new Error('Reasoning effort not available for this model');
+    if ((model && !SAFE_TOKEN.test(model)) || (effort && !SAFE_TOKEN.test(effort))) throw new Error('Invalid value');
     images = validateImages(images);
-    if (images.length && !known.images) throw new Error('Questo agente non accetta immagini');
-    if (this.running().length >= cfg.maxConcurrentJobs) throw new Error('Troppi job in esecuzione');
-    if (sessionId && !fork && this.running().some((j) => j.sessionId === sessionId && !j.fork)) throw new Error('Questa sessione ha già un prompt in esecuzione');
+    if (images.length && !known.images) throw new Error('This agent does not accept images');
+    if (this.running().length >= cfg.maxConcurrentJobs) throw new Error('Too many jobs running');
+    if (sessionId && !fork && this.running().some((j) => j.sessionId === sessionId && !j.fork)) throw new Error('This session already has a prompt running');
 
     const job = new Job({ agent, sessionId: fork ? null : sessionId, resumeOf: sessionId || null, fork, cwd, mode, model, effort, prompt });
     job.imageCount = images.length;
@@ -332,7 +333,7 @@ export class JobManager extends EventEmitter {
       buf += chunk;
       let nl;
       while ((nl = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, nl);
+        const line = buf.slice(0, nl).replace(/\r$/, ''); // CRLF on Windows
         buf = buf.slice(nl + 1);
         if (!line.trim()) continue;
         if (!normalize) { plain.push(line); schedulePlain(); continue; }
@@ -359,19 +360,21 @@ export class JobManager extends EventEmitter {
     const codexLockRetryMs = Number.isInteger(cfg.codexLockRetryMs) ? cfg.codexLockRetryMs : 2500;
 
     const timeout = setTimeout(() => {
-      job.push([{ role: 'error', text: 'Timeout: job terminato.' }]);
+      job.push([{ role: 'error', text: 'Timeout: job stopped.' }]);
       this.kill(job, 'timeout');
     }, cfg.jobTimeoutMinutes * 60 * 1000);
 
     let child;
     const launch = () => {
       try {
-        child = spawn(spec.command, spec.args, { cwd, env, shell: false, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+        // Own process group on POSIX, so cancel reaches everything the agent started.
+        // Inline {prompt} arguments must never go through a Windows batch file.
+        child = spawnCommand(spec.command, spec.args, { cwd, env, shell: false, ...treeSpawnOptions(), stdio: ['pipe', 'pipe', 'pipe'] }, { allowBatch: spec.stdin != null });
       } catch (e) {
         clearTimeout(timeout);
         job.status = 'failed';
         job.ended = Date.now();
-        job.push([{ role: 'error', text: `Avvio fallito: ${e.message}` }]);
+        job.push([{ role: 'error', text: `Failed to start: ${e.message}` }]);
         job.emit('update', job.summary());
         job.emit('end');
         return false;
@@ -383,7 +386,7 @@ export class JobManager extends EventEmitter {
       child.stdout.on('data', onStdout);
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk) => { errBuf = (errBuf + chunk).slice(-8000); });
-      child.on('error', (e) => job.push([{ role: 'error', text: `Errore processo: ${e.message}` }]));
+      child.on('error', (e) => job.push([{ role: 'error', text: `Process error: ${e.message}` }]));
       child.on('close', onClose);
       return true;
     };
@@ -397,7 +400,7 @@ export class JobManager extends EventEmitter {
         errBuf = '';
         codexLock = '';
         buf = '';
-        if (codexLockRetries === 1) job.push([{ role: 'system', text: 'La stessa chat è momentaneamente aperta sul PC. Attendo e riprovo senza creare copie.' }]);
+        if (codexLockRetries === 1) job.push([{ role: 'system', text: 'The same chat is busy on the PC right now. Waiting and retrying without creating a copy.' }]);
         audit('codex_locked_retry', { job: job.id, sessionId, attempt: codexLockRetries });
         job.emit('update', job.summary());
         setTimeout(() => {
@@ -407,7 +410,7 @@ export class JobManager extends EventEmitter {
       }
       if (code !== 0 && agent === 'codex' && sessionId && !job.fork && CODEX_LOCKED.test(codexDiagnostic)) {
         codexLock = '';
-        job.push([{ role: 'error', text: 'La chat Codex è ancora aperta sul PC. Chiudila e reinvia il prompt: non è stata creata nessuna conversazione duplicata.' }]);
+        job.push([{ role: 'error', text: 'The Codex chat is still open on the PC. Close it and send the prompt again: no duplicate conversation was created.' }]);
       }
       clearTimeout(timeout);
       if (imageDir) fs.rmSync(imageDir, { recursive: true, force: true });
@@ -455,18 +458,18 @@ export class JobManager extends EventEmitter {
     job.controller = turn;
     turn.on('messages', (messages) => job.push(messages));
     turn.on('started', () => {
-      job.push([{ role: 'system', text: 'Collegato alla stessa chat Codex aperta in Visual Studio Code.' }]);
+      job.push([{ role: 'system', text: 'Connected to the same Codex chat that is open in Visual Studio Code.' }]);
       job.emit('update', job.summary());
     });
     turn.once('complete', ({ code, signal }) => finish(code, signal));
     const timeout = setTimeout(() => {
-      job.push([{ role: 'error', text: 'Timeout: attività terminata.' }]);
+      job.push([{ role: 'error', text: 'Timeout: task stopped.' }]);
       this.kill(job, 'timeout');
     }, this.cfg.jobTimeoutMinutes * 60 * 1000);
     turn.start().catch((error) => {
       let message = error?.message || String(error);
       if (CODEX_LOCKED.test(message)) {
-        message = 'Visual Studio Code usa ancora il vecchio collegamento. Ricarica una volta la finestra di VS Code: poi telefono e PC useranno la stessa chat.';
+        message = 'Visual Studio Code is still using the old connection. Reload the VS Code window once: then phone and PC will share the same chat.';
       }
       job.push([{ role: 'error', text: message }]);
       turn.complete(1);
@@ -481,10 +484,8 @@ export class JobManager extends EventEmitter {
       return;
     }
     if (!job.child) return;
-    try { process.kill(-job.child.pid, 'SIGTERM'); } catch { /* already gone */ }
-    setTimeout(() => {
-      try { process.kill(-job.child.pid, 'SIGKILL'); } catch { /* already gone */ }
-    }, 5000).unref();
+    killTree(job.child, 'SIGTERM');
+    setTimeout(() => killTree(job.child, 'SIGKILL'), 5000).unref();
   }
 
   killAll() {
