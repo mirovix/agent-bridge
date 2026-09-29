@@ -1,0 +1,32 @@
+node_modules/
+*.log
+*.vsix
+__pycache__/
+*.py[cod]
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+.agent-bridge/
+
+# Generated mobile packages and build directories
+*.apk
+*.aab
+*.ipa
+*.xcarchive
+*.zip
+android/.gradle/
+android/local.properties
+android/**/build/
+ios/build*/
+ios/DerivedData/
+**/xcuserdata/
+*.xcuserstate
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+
+# Separate application/repository that may live beside this project locally
+/nuvia-desktop/

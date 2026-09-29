@@ -1,0 +1,17 @@
+# Template used by scripts/install-linux-service.sh.
+# The installer replaces @PROJECT_ROOT@, @NODE_BIN@ and @NODE_DIR@.
+[Unit]
+Description=Agent Bridge (remote console for Claude Code / Codex)
+After=network-online.target
+
+[Service]
+WorkingDirectory=@PROJECT_ROOT@
+ExecStart=@NODE_BIN@ src/server.js
+Environment=PATH=@NODE_DIR@:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

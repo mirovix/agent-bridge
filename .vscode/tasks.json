@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Agent Bridge: avvia simulatore Android",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/run-android-emulator.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Agent Bridge: avvia simulatore iPhone (solo Mac)",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/run-ios-simulator.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    }
+  ]
+}

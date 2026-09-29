@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#11131a">
+  <title>HappyDEV</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#11131a;touch-action:none}
+    body{display:flex;align-items:center;justify-content:center;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);box-sizing:border-box}
+    canvas{display:block;outline:0;max-width:100%;max-height:100%}
+    #menu{position:fixed;z-index:3;right:10px;top:max(10px,env(safe-area-inset-top));border:1px solid #3b4255;border-radius:999px;background:#202637;color:#fff;padding:8px 12px;font:600 12px system-ui}
+  </style>
+  <script>
+    window.acquireVsCodeApi=()=>({
+      postMessage(message){
+        try {
+          if(message.type==='best') localStorage.setItem('happydev.best.'+message.game,String(message.value));
+          if(message.type==='last') localStorage.setItem('happydev.last',message.game);
+          if(message.type==='level') localStorage.setItem('happydev.level',message.value);
+        } catch (_) {}
+      }
+    });
+  </script>
+</head>
+<body>
+  <button id="menu" type="button" aria-label="Torna al menu dei giochi">☰ Giochi</button>
+  <canvas id="game" tabindex="0" data-bests="{}" data-last="flappy" data-level="senior" data-start="menu"></canvas>
+  <script>
+    const gameCanvas=document.getElementById('game'), bests={};
+    for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('happydev.best.'))bests[k.slice(14)]=Number(localStorage.getItem(k))||0}
+    gameCanvas.dataset.bests=JSON.stringify(bests);
+    gameCanvas.dataset.last=localStorage.getItem('happydev.last')||'flappy';
+    gameCanvas.dataset.level=localStorage.getItem('happydev.level')||'senior';
+    document.getElementById('menu').onclick=()=>location.reload();
+  </script>
+  <script src="core.js"></script>
+  <script src="games/flappy.js"></script>
+  <script src="games/dash.js"></script>
+  <script src="games/wings.js"></script>
+  <script src="games/stack.js"></script>
+  <script src="games/snake.js"></script>
+</body>
+</html>

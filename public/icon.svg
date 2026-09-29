@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Agent Bridge">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b7cfa"/>
+      <stop offset="0.55" stop-color="#6d5cf0"/>
+      <stop offset="1" stop-color="#8b46e8"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="114" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="114" fill="url(#sheen)"/>
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <!-- terminal prompt -->
+    <path d="M150 176 L226 256 L150 336" stroke-width="38"/>
+    <!-- signal reaching out to the phone -->
+    <path d="M311 161 A110 110 0 0 1 311 351" stroke-width="30" opacity="0.95"/>
+    <path d="M336 117 A160 160 0 0 1 336 395" stroke-width="30" opacity="0.5"/>
+  </g>
+</svg>

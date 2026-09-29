@@ -1,0 +1,49 @@
+{
+  "name": "agent-bridge-companion",
+  "displayName": "Agent Bridge \u2014 prompt dal telefono in diretta",
+  "description": "Collega i prompt inviati dal telefono alla stessa chat Claude Code / Codex, senza aprire terminali.",
+  "version": "1.3.0",
+  "publisher": "agent-bridge",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentBridge.showLast",
+        "title": "Agent Bridge: mostra l'ultimo prompt dal telefono"
+      },
+      {
+        "command": "agentBridge.openApp",
+        "title": "Agent Bridge: apri la web app"
+      },
+      {
+        "command": "agentBridge.reconnect",
+        "title": "Agent Bridge: riconnetti"
+      }
+    ],
+    "configuration": {
+      "title": "Agent Bridge",
+      "properties": {
+        "agentBridge.notify": {
+          "type": "boolean",
+          "default": true,
+          "description": "Mostra una notifica quando arriva un prompt e quando l'agente ha finito."
+        },
+        "agentBridge.openInChat": {
+          "type": "boolean",
+          "default": true,
+          "description": "Quando un prompt inviato dal telefono \u00e8 finito, aprilo nella chat di Claude Code / Codex (solo nella finestra che ha quella cartella aperta)."
+        }
+      }
+    }
+  }
+}

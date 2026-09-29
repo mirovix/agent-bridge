@@ -1,0 +1,52 @@
+name: Build iPhone app (unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-unsigned.yml"
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+
+      - name: Build native app for iPhone
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios/AgentBridge.xcodeproj \
+            -scheme "Agent Bridge" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$RUNNER_TEMP/AgentBridgeDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: Package unsigned IPA
+        run: |
+          APP="$RUNNER_TEMP/AgentBridgeDerivedData/Build/Products/Release-iphoneos/Agent Bridge.app"
+          test -d "$APP"
+          mkdir -p "$RUNNER_TEMP/AgentBridgePayload/Payload"
+          ditto "$APP" "$RUNNER_TEMP/AgentBridgePayload/Payload/Agent Bridge.app"
+          cd "$RUNNER_TEMP/AgentBridgePayload"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/AgentBridge-unsigned.ipa" Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AgentBridge-unsigned-ipa
+          path: AgentBridge-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
