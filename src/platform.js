@@ -147,12 +147,17 @@ export function killTree(child, signal = 'SIGTERM') {
 
 // ---------- paths ----------
 
-/** Case-insensitive file systems compare paths without case (Windows). */
+/** Symlinks resolved when the path exists (macOS: /var → /private/var). */
+function realOrResolved(p) {
+  const resolved = path.resolve(p);
+  try { return fs.realpathSync.native(resolved); } catch { return resolved; }
+}
+
+/** Same folder? Follows symlinks; case-insensitive on Windows. */
 export function samePath(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
-  a = path.resolve(a);
-  b = path.resolve(b);
-  return IS_WINDOWS ? a.toLowerCase() === b.toLowerCase() : a === b;
+  const eq = (x, y) => (IS_WINDOWS ? x.toLowerCase() === y.toLowerCase() : x === y);
+  return eq(path.resolve(a), path.resolve(b)) || eq(realOrResolved(a), realOrResolved(b));
 }
 
 /** True when `child` equals `root` or lies inside it. */

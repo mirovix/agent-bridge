@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { escapeCmdArg, isNamedPipe, readCmdShimTarget, resolveSpawn, venvPython, which } from '../src/platform.js';
+import { escapeCmdArg, isNamedPipe, readCmdShimTarget, resolveSpawn, samePath, venvPython, which } from '../src/platform.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-bridge-platform-'));
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -57,4 +57,15 @@ test('which() honours PATHEXT on Windows and PATH on POSIX', () => {
     assert.equal(which('fake', { env: { PATH: bin } }), path.join(bin, 'fake'));
   }
   assert.equal(which('definitely-not-here', { env: { PATH: bin } }), null);
+});
+
+test('samePath follows symlinks (macOS /var → /private/var)', { skip: process.platform === 'win32' && 'symlinks need admin rights on Windows' }, () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-samepath-'));
+  const real = path.join(base, 'real');
+  const link = path.join(base, 'link');
+  fs.mkdirSync(real);
+  fs.symlinkSync(real, link, 'dir');
+  assert.ok(samePath(link, real));
+  assert.ok(!samePath(link, base));
+  fs.rmSync(base, { recursive: true, force: true });
 });
