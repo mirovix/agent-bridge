@@ -1,45 +1,41 @@
-# Installazione su iPhone e iPad
+# iPhone and iPad installation
 
-Il client iOS è una vera app SwiftUI. Richiede iOS 16 o successivo e l'URL HTTPS
-del server Agent Bridge raggiungibile tramite Tailscale.
+The iOS client is a native SwiftUI app. It requires iOS 16 or newer and the
+HTTPS address of an Agent Bridge server reachable through Tailscale.
 
-## Metodo consigliato: Mac con Xcode
+## Recommended: Xcode on a Mac
 
-1. Clona la repository sul Mac e apri `ios/AgentBridge.xcodeproj`.
-2. Seleziona il target **Agent Bridge**, poi **Signing & Capabilities**.
-3. Scegli il tuo Apple Team. Se necessario, cambia il bundle identifier
-   `com.agentbridge.ios` con uno univoco.
-4. Collega e autorizza l'iPhone, selezionalo come destinazione e premi **Run**.
-5. Al primo avvio inserisci l'URL restituito sul PC Linux da
-   `tailscale serve status`, poi password e codice 2FA.
+1. Clone the repository on the Mac and open `ios/AgentBridge.xcodeproj`.
+2. Select the **Agent Bridge** target and open **Signing & Capabilities**.
+3. Choose your Apple Team. If needed, replace `com.agentbridge.ios` with a
+   unique bundle identifier.
+4. Connect and trust the iPhone, select it as the destination, and press **Run**.
+5. On first launch, enter the URL printed by `tailscale serve status` on the
+   Linux PC, followed by your Agent Bridge password and 2FA code.
 
-Con un account Apple gratuito la firma di sviluppo deve normalmente essere
-rinnovata ogni 7 giorni. TestFlight richiede l'Apple Developer Program.
+A free Apple account normally requires the development signature to be renewed
+every seven days. TestFlight requires the Apple Developer Program.
 
-## Senza Mac: build GitHub Actions
+## Without a Mac: GitHub Actions
 
-1. Apri la scheda **Actions** della repository.
-2. Avvia **Build iPhone app (unsigned)**.
-3. Scarica l'artefatto `AgentBridge-unsigned-ipa` al termine della workflow.
-4. Firma e installa l'IPA con SideStore o un altro strumento di sideloading
-   affidabile. Inserisci Apple ID, password e 2FA soltanto nell'app ufficiale
-   scelta, mai in una issue o in un file della repository.
-5. Se iOS lo richiede, abilita **Modalità sviluppatore** e autorizza il profilo
-   in **Impostazioni → Generali → VPN e gestione dispositivo**.
+1. Open the repository **Actions** tab.
+2. Run **Build iPhone app (unsigned)**.
+3. Download the `AgentBridge-unsigned-ipa` artifact.
+4. Sign and install it using SideStore or another trusted sideloading tool.
+5. If requested, enable **Developer Mode** and trust the profile under
+   **Settings → General → VPN & Device Management**.
 
-Un IPA non firmato non si può avviare direttamente: la firma lega la build al
-dispositivo e all'account Apple.
+An unsigned IPA cannot run directly. Signing associates the build with your
+device and Apple account. Enter Apple credentials only in the official tool you
+choose, never in a repository issue or file.
 
-## Simulatore iPhone
+## Simulator
 
-Il simulatore ufficiale esiste soltanto su macOS con Xcode:
+The official iPhone simulator requires macOS and Xcode:
 
 ```bash
 scripts/run-ios-simulator.sh
 ```
 
-Su Linux usa un iPhone fisico oppure la build cloud. Non esiste un emulatore iOS
-ufficiale per Linux capace di sostituire la verifica sul dispositivo reale.
-
-Per ulteriori dettagli su SideStore e TestFlight consulta anche
-[`ios/README.md`](../ios/README.md).
+On Linux, use a physical iPhone or the GitHub Actions build. There is no official
+iOS simulator for Linux that replaces testing on a real device.

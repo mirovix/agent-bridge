@@ -1,28 +1,24 @@
-# Installazione su Linux
+# Linux installation
 
-Il PC Linux esegue il server Agent Bridge, la web app e i programmi `codex` e
-`claude`. Telefono e browser si collegano a questo PC: le credenziali degli
-agenti non vengono copiate nelle app mobili.
+The Linux PC runs Agent Bridge, the web app, and the Codex or Claude command-line
+tools. Mobile clients connect to this PC; agent credentials are never copied to
+the phone.
 
-## 1. Requisiti
+## Requirements
 
-- Linux con `systemd` per l'avvio automatico (l'avvio manuale funziona anche
-  senza `systemd`).
-- Git, Node.js 20 o successivo e npm.
-- Codex CLI e/o Claude Code già installati e autenticati con il proprio account.
-- Tailscale sul PC e sui dispositivi remoti.
-
-Verifica l'ambiente:
+- Git and Node.js 20 or newer.
+- Codex CLI and/or Claude Code installed and authenticated.
+- Tailscale on the Linux PC and remote devices.
+- `systemd` for automatic startup. Manual startup works without it.
 
 ```bash
 git --version
 node --version
-npm --version
-codex --version    # se usi Codex
-claude --version   # se usi Claude Code
+codex --version     # if you use Codex
+claude --version    # if you use Claude Code
 ```
 
-## 2. Scarica e configura
+## Install
 
 ```bash
 git clone https://github.com/mirovix/agent-bridge.git
@@ -32,44 +28,43 @@ npm test
 npm run setup
 ```
 
-Durante `setup` scegli le cartelle di lavoro, crea una password di almeno 14
-caratteri, registra il QR 2FA e conserva i codici di recupero in un password
-manager. Configurazione e segreti rimangono fuori dalla repository, dentro
-`~/.agent-bridge/`.
+Setup asks for allowed workspaces, a password of at least 14 characters, and a
+2FA code. Store the recovery codes in a password manager. Configuration and
+secrets are written to `~/.agent-bridge/`, outside the repository.
 
-Avvia una prima volta in foreground:
+Test the server:
 
 ```bash
 npm start
 ```
 
-Apri `http://127.0.0.1:8765` sullo stesso PC e verifica il login. Interrompi con
-`Ctrl+C`.
+Open `http://127.0.0.1:8765` on the same PC. Stop it with `Ctrl+C` after checking
+the login.
 
-## 3. Avvio automatico
+## Start automatically
 
 ```bash
 npm run service:install
 systemctl --user status agent-bridge
 ```
 
-L'installer crea un servizio utente con i percorsi effettivi di questa copia.
-Per mantenerlo attivo anche dopo il logout:
+The installer detects the project directory and Node.js path. To keep it running
+after logout:
 
 ```bash
 loginctl enable-linger "$USER"
 ```
 
-Comandi utili:
+Useful commands:
 
 ```bash
 systemctl --user restart agent-bridge
 journalctl --user -u agent-bridge -f
 ```
 
-## 4. Accesso remoto privato
+## Private remote access
 
-Installa Tailscale dai pacchetti ufficiali, poi:
+Install Tailscale from its official packages, then run:
 
 ```bash
 sudo tailscale up
@@ -77,35 +72,36 @@ sudo tailscale serve --bg 8765
 tailscale serve status
 ```
 
-Copia l'URL `https://…ts.net` mostrato dal comando dentro `allowedOrigins` in
-`~/.agent-bridge/config.json`, quindi riavvia il servizio. Usa **Tailscale
-Serve**, non Funnel: Serve limita l'accesso ai dispositivi della tua tailnet.
+Add the displayed `https://…ts.net` URL to `allowedOrigins` in
+`~/.agent-bridge/config.json`, then restart Agent Bridge. Use **Tailscale Serve**,
+not Funnel, so the service stays inside your tailnet.
 
-Sul telefono o sul PC remoto installa Tailscale, entra nello stesso account e
-apri quell'URL. Dal browser puoi installare anche la PWA.
+Install Tailscale on the remote phone or computer, sign in to the same tailnet,
+and open the URL. A mobile browser can install the web app with **Add to Home
+Screen**.
 
-## 5. Collegamento alle chat di VS Code
+## VS Code integration
 
-Per Codex compila e installa la companion extension:
+For Codex:
 
 ```bash
 python3 scripts/build-vsix.py
 code --install-extension vscode-extension/agent-bridge-companion-*.vsix --force
 ```
 
-Imposta `chatgpt.cliExecutable` sul bridge indicato dall'estensione e ricarica
-una volta la finestra VS Code. Agent Bridge e VS Code useranno lo stesso daemon
-Codex, evitando due writer sulla stessa conversazione.
+Configure `chatgpt.cliExecutable` with the bridge path shown by the extension,
+then reload the VS Code window once. Agent Bridge and VS Code will share one
+Codex daemon and one conversation writer.
 
-Per Claude Code:
+For Claude Code:
 
 ```bash
 npm run hook:install
 ```
 
-Poi digita `/telefono` nella chat Claude di VS Code che vuoi collegare.
+Enter `/telefono` in the Claude conversation that should receive phone prompts.
 
-## Aggiornamento
+## Update
 
 ```bash
 cd agent-bridge
@@ -115,7 +111,7 @@ npm test
 systemctl --user restart agent-bridge
 ```
 
-## Diagnostica rapida
+## Troubleshooting
 
 ```bash
 systemctl --user status agent-bridge
@@ -124,5 +120,6 @@ tailscale status
 tailscale serve status
 ```
 
-Se il login è temporaneamente bloccato dopo tentativi errati, controlla prima
-il registro `~/.agent-bridge/audit.log`, quindi esegui `npm run unlock`.
+After suspicious or repeated failed logins, inspect
+`~/.agent-bridge/audit.log`. Use `npm run unlock` only after confirming the
+attempts were yours.

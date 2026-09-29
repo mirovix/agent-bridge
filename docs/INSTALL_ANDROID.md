@@ -1,45 +1,41 @@
-# Installazione su Android
+# Android installation
 
-Il client Android è nativo e supporta Android 8 (API 26) e successivi.
+The native Android client supports Android 8 (API 26) and newer.
 
-## Build con GitHub Actions
+## Install the GitHub Actions APK
 
-1. Apri **Actions → Android debug APK → Run workflow**.
-2. Scarica l'artefatto `AgentBridge-Android-debug`.
-3. Estrai `app-debug.apk`, trasferiscilo sul telefono e aprilo.
-4. Consenti temporaneamente l'installazione da quella sorgente quando Android lo
-   richiede.
-5. Avvia Agent Bridge e inserisci l'URL HTTPS mostrato sul PC da
-   `tailscale serve status`.
+1. Open **Actions → Android debug APK → Run workflow**.
+2. Download the `AgentBridge-Android-debug` artifact.
+3. Extract `app-debug.apk`, transfer it to the phone, and open it.
+4. Temporarily allow installation from that file manager or browser when
+   Android asks.
+5. Start Agent Bridge and enter the HTTPS URL printed by
+   `tailscale serve status` on the Linux PC.
 
-## Build locale con Android Studio
+## Build with Android Studio
 
-Requisiti: Android Studio, JDK 17 e Android SDK 37.
+Requirements: Android Studio, JDK 17, and Android SDK 37.
 
-1. Apri la cartella `android/` in Android Studio.
-2. Attendi la sincronizzazione Gradle.
-3. Seleziona un dispositivo fisico o virtuale.
-4. Premi **Run**, oppure usa **Build → Build APK(s)**.
+1. Open the `android/` directory in Android Studio.
+2. Wait for Gradle synchronization.
+3. Select a physical or virtual device.
+4. Press **Run**, or use **Build → Build APK(s)**.
 
-L'APK di debug viene creato in
+The debug APK is written to
 `android/app/build/outputs/apk/debug/app-debug.apk`.
 
-## Emulatore Android
+## Emulator
 
-Crea da Android Studio un AVD chiamato `medium_phone`, quindi:
+Create an Android Virtual Device named `medium_phone`, then run:
 
 ```bash
-export ANDROID_SDK_ROOT="$HOME/Android/Sdk"  # adatta se necessario
+export ANDROID_SDK_ROOT="$HOME/Android/Sdk"  # adjust when necessary
 scripts/run-android-emulator.sh
 ```
 
-Lo script aspetta il boot, installa l'APK già compilato e apre Agent Bridge. Se
-l'APK è in un altro percorso:
+The launcher waits for boot, installs the compiled APK, and opens Agent Bridge.
+To use an APK stored elsewhere:
 
 ```bash
-AGENT_BRIDGE_APK=/percorso/app-debug.apk scripts/run-android-emulator.sh
+AGENT_BRIDGE_APK=/path/to/app-debug.apk scripts/run-android-emulator.sh
 ```
-
-Nel simulatore, per raggiungere un server avviato sullo stesso PC puoi usare
-Tailscale oppure l'URL appropriato alla rete dell'emulatore, purché sia HTTPS e
-presente in `allowedOrigins`.

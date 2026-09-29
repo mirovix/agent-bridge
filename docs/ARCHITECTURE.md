@@ -1,38 +1,38 @@
-# Architettura
+# Architecture
 
-Agent Bridge mantiene sul PC credenziali, conversazioni e processi degli agenti.
-I client inviano richieste autenticate allo stesso server locale.
+Agent Bridge keeps credentials, conversations, and agent processes on the PC.
+Every client sends authenticated requests to the same local server.
 
 ```text
 iPhone SwiftUI ─┐
-Android nativo ─┼─ HTTPS/Tailscale ─ Agent Bridge su Linux ─ Codex / Claude
+Native Android ─┼─ HTTPS/Tailscale ─ Agent Bridge on Linux ─ Codex / Claude
 Web app / PWA ──┘                         │
                                          ├─ ~/.codex/sessions
                                          └─ ~/.claude/projects
 ```
 
-## Componenti
+## Components
 
-- `src/`: server HTTP/WebSocket, autenticazione, job e lettura conversazioni.
-- `public/`: web app/PWA senza fase di compilazione.
-- `ios/`: app SwiftUI e progetto Xcode.
-- `android/`: app Android nativa.
-- `vscode-extension/`: companion per collegare la chat dell'editor.
-- `scripts/`: setup, servizio Linux, hook Claude, bridge Codex e simulatori.
-- `test/`: test Node end-to-end e unitari.
-- `.github/workflows/`: build riproducibili di APK e IPA non firmato.
+- `src/`: HTTP/WebSocket server, authentication, jobs, and conversation reader.
+- `public/`: web app and PWA with no build step.
+- `ios/`: SwiftUI app and Xcode project.
+- `android/`: native Android application.
+- `vscode-extension/`: companion that connects the editor chat.
+- `scripts/`: setup, Linux service, Claude hook, Codex bridge, and simulators.
+- `test/`: Node.js unit and end-to-end tests.
+- `.github/workflows/`: reproducible APK and unsigned IPA builds.
 
-## Conversazioni condivise
+## Shared conversations
 
-Codex usa un unico app-server daemon condiviso da VS Code e Agent Bridge. Il
-telefono aggiunge un turno alla stessa sessione invece di avviare un secondo
-writer. Claude Code usa l'hook `/telefono` per consegnare il prompt alla chat di
-VS Code attualmente in ascolto.
+Codex uses one app-server daemon shared by VS Code and Agent Bridge. A phone
+prompt adds a turn to the same thread instead of starting a second writer.
+Claude Code uses the `/telefono` hook to deliver a prompt to the VS Code
+conversation currently listening.
 
-## Confini di sicurezza
+## Security boundaries
 
-Il server ascolta solo su `127.0.0.1`; l'accesso remoto passa da Tailscale Serve.
-Password, chiavi 2FA, sessioni e audit restano in `~/.agent-bridge/`, che non è
-versionata. Le app mobili memorizzano soltanto URL, preferenze e cookie di
-sessione nei rispettivi sandbox. I file APK, IPA, ZIP e VSIX sono artefatti di
-build esclusi da Git.
+The server listens only on `127.0.0.1`; remote access goes through Tailscale
+Serve. Passwords, 2FA keys, sessions, and audit events remain in
+`~/.agent-bridge/`, which is not versioned. Mobile apps store only the server
+URL, preferences, and session cookie inside their platform sandbox. APK, IPA,
+ZIP, and VSIX files are generated build artifacts excluded from Git.
