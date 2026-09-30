@@ -51,6 +51,8 @@ test('which() honours PATHEXT on Windows and PATH on POSIX', () => {
   fs.mkdirSync(bin);
   if (process.platform === 'win32') {
     fs.writeFileSync(path.join(bin, 'fake.cmd'), '@echo off\r\n');
+    // npm also writes an extensionless shell script, which Windows cannot run.
+    fs.writeFileSync(path.join(bin, 'fake'), '#!/bin/sh\n');
     assert.equal(which('fake', { env: { PATH: bin, PATHEXT: '.EXE;.CMD' } }).toLowerCase(), path.join(bin, 'fake.cmd').toLowerCase());
   } else {
     fs.writeFileSync(path.join(bin, 'fake'), '#!/bin/sh\n', { mode: 0o755 });

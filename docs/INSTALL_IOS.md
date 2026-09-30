@@ -1,5 +1,14 @@
 # iPhone and iPad installation
 
+## Quickest: the web app (nothing to install)
+
+1. Install **Tailscale** from the App Store and sign in with the same account as your computer.
+2. Open the `https://…ts.net` address that `tailscale serve status` prints on the computer, in **Safari**.
+3. Sign in with your password and 2FA code, then tap **Share → Add to Home Screen**.
+
+It opens full screen like an app, and updates by itself whenever the server is updated.
+The native app below is optional.
+
 The iOS client is a native SwiftUI app. It requires iOS 16 or newer and the
 HTTPS address of an Agent Bridge server reachable through Tailscale.
 

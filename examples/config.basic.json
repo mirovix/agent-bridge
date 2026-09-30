@@ -1,0 +1,18 @@
+{
+  "host": "127.0.0.1",
+  "port": 8765,
+  "allowedOrigins": ["https://my-pc.tail1234.ts.net"],
+  "workspaces": ["~/projects"],
+  "sessionIdleMinutes": 30,
+  "sessionMaxHours": 12,
+  "allowDangerousModes": false,
+  "maxConcurrentJobs": 3,
+  "jobTimeoutMinutes": 60,
+  "maxPromptChars": 20000,
+  "codexSharedDaemon": true,
+  "agents": {
+    "claude": { "enabled": true, "command": "claude", "defaultMode": "acceptEdits" },
+    "codex": { "enabled": true, "command": "codex", "defaultMode": "workspace-write" },
+    "custom": []
+  }
+}

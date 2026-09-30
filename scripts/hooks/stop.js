@@ -27,6 +27,9 @@ async function main() {
   const { session_id: sessionId, cwd } = input;
   const armed = getArmed(cwd);
   if (!armed || !sessionId) return; // not listening: let the turn end immediately
+  // Claude Code kills the hook when you type in the chat: stop listening at once,
+  // so the app never reports a prompt as delivered to a chat that is gone.
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => { clearLive(sessionId); process.exit(0); });
 
   try {
     const deadline = Math.min(Date.now() + MAX_WAIT_MS, armed.armedUntil);

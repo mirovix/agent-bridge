@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import net from 'node:net';
 import WebSocket from 'ws';
-import { defaultCodexSocket, isNamedPipe, spawnCommandSync } from './platform.js';
+import { defaultCodexSocket, isNamedPipe, spawnCommand } from './platform.js';
 
 const DEFAULT_SOCKET = defaultCodexSocket();
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -14,6 +14,23 @@ const UUID = /^[0-9a-f-]{36}$/i;
 // pipe (\\.\pipe\name) or a ws:// URL (e.g. ws://127.0.0.1:PORT/).
 const isUrl = (s) => /^wss?:\/\//i.test(s);
 
+// The permission mode picked in the app, as the app-server's sandbox policy.
+export const SANDBOX_POLICY = {
+  'read-only': { type: 'readOnly' },
+  'workspace-write': { type: 'workspaceWrite' },
+  'danger-full-access': { type: 'dangerFullAccess' },
+};
+
+// Nobody can approve a command from the phone mid-turn: questions are declined and
+// the agent continues within its sandbox (the same as `codex exec`).
+export const DECLINE = {
+  'item/commandExecution/requestApproval': { decision: 'decline' },
+  'item/fileChange/requestApproval': { decision: 'decline' },
+  'item/permissions/requestApproval': { permissions: {}, scope: 'turn' },
+  'item/tool/requestUserInput': { answers: {} },
+  'mcpServer/elicitation/request': { action: 'decline' },
+};
+
 function reachable(endpoint) {
   // URLs and named pipes are not files: probing a pipe would use up a connection,
   // so they are tried as-is and a connection error explains what is wrong.
@@ -21,20 +38,46 @@ function reachable(endpoint) {
   try { return fs.realpathSync(endpoint); } catch { return null; }
 }
 
-function daemonSocket(command, requested) {
-  const file = requested || process.env.CODEX_APP_SERVER_SOCKET || DEFAULT_SOCKET;
-  const found = reachable(file);
-  if (found) return found;
-  const started = spawnCommandSync(command || 'codex', ['app-server', 'daemon', 'start'], {
-    encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'],
+/** `codex app-server daemon start`, without blocking the server's event loop. */
+function startDaemon(command) {
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawnCommand(command || 'codex', ['app-server', 'daemon', 'start'], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+    } catch (e) { return reject(new Error(`Codex daemon not available: ${e.message}`)); }
+    let err = '';
+    const timer = setTimeout(() => { child.kill(); reject(new Error('Codex daemon did not start within 30 seconds')); }, 30_000);
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (c) => { err = (err + c).slice(-4000); });
+    child.on('error', (e) => { clearTimeout(timer); reject(new Error(`Codex daemon not available: ${e.message}`)); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(); else reject(new Error(`Codex daemon not available: ${err.trim() || `exit ${code}`}`));
+    });
   });
-  if (started.error || started.status !== 0) {
-    throw new Error(`Codex daemon not available: ${(started.stderr || started.error?.message || '').trim()}`);
-  }
+}
+
+async function daemonSocket(command, requested, { restart = false } = {}) {
+  const file = requested || process.env.CODEX_APP_SERVER_SOCKET || DEFAULT_SOCKET;
+  const found = !restart && reachable(file);
+  if (found) return found;
+  await startDaemon(command);
   const ready = reachable(file);
   if (!ready) throw new Error('Codex daemon started, but the shared socket is not available');
   return ready;
 }
+
+function connect(socket) {
+  const ws = isUrl(socket)
+    ? new WebSocket(socket)
+    : new WebSocket('ws://localhost/', { createConnection: () => net.createConnection(socket) });
+  return new Promise((resolve, reject) => {
+    ws.once('open', () => resolve(ws));
+    ws.once('error', reject);
+  });
+}
+
+const sameSandbox = (a, b) => !!a && !!b && a.type === b.type;
 
 function itemMessages(item) {
   if (!item || typeof item !== 'object') return [];
@@ -58,10 +101,11 @@ function itemMessages(item) {
 }
 
 export class CodexDaemonTurn extends EventEmitter {
-  constructor({ command = 'codex', socketPath, threadId, prompt, cwd, model, effort, imagePaths = [] }) {
+  constructor({ command = 'codex', socketPath, threadId, prompt, cwd, model, effort, mode, imagePaths = [] }) {
     super();
     if (!UUID.test(threadId || '')) throw new Error('Invalid Codex session');
-    Object.assign(this, { command, socketPath, threadId, prompt, cwd, model, effort, imagePaths });
+    Object.assign(this, { command, socketPath, threadId, prompt, cwd, model, effort, mode, imagePaths });
+    this.cancelRequested = false;
     this.pending = new Map();
     this.seq = 0;
     this.turnId = null;
@@ -82,24 +126,26 @@ export class CodexDaemonTurn extends EventEmitter {
   }
 
   async start() {
-    const socket = daemonSocket(this.command, this.socketPath);
-    this.ws = isUrl(socket)
-      ? new WebSocket(socket)
-      : new WebSocket('ws://localhost/', { createConnection: () => net.createConnection(socket) });
+    let socket = await daemonSocket(this.command, this.socketPath);
+    try {
+      this.ws = await connect(socket);
+    } catch (e) {
+      // A socket file left behind by a crashed daemon or a reboot: start a new one once.
+      if (!['ECONNREFUSED', 'ENOENT'].includes(e.code) || isUrl(socket)) throw e;
+      socket = await daemonSocket(this.command, this.socketPath, { restart: true });
+      this.ws = await connect(socket);
+    }
+    if (this.finished) { this.close(); return this; }
     this.ws.on('message', (raw) => this.onMessage(raw));
     this.ws.on('error', (error) => this.fail(error));
     this.ws.on('close', () => {
       if (!this.finished) this.fail(new Error('Connection to the Codex chat was lost'));
     });
-    await new Promise((resolve, reject) => {
-      this.ws.once('open', resolve);
-      this.ws.once('error', reject);
-    });
     await this.request('initialize', {
-      clientInfo: { name: 'agent-bridge', title: 'Agent Bridge', version: '1.1.0' },
+      clientInfo: { name: 'agent-bridge', title: 'Agent Bridge', version: '1.5.0' },
       capabilities: { experimentalApi: true, requestAttestation: false },
     });
-    await this.request('thread/resume', { threadId: this.threadId, excludeTurns: true });
+    const resumed = await this.request('thread/resume', { threadId: this.threadId, excludeTurns: true });
     const input = [
       { type: 'text', text: this.prompt, text_elements: [] },
       ...this.imagePaths.map((imagePath) => ({ type: 'localImage', path: imagePath })),
@@ -113,15 +159,39 @@ export class CodexDaemonTurn extends EventEmitter {
     if (this.cwd) params.cwd = this.cwd;
     if (this.model) params.model = this.model;
     if (this.effort) params.effort = this.effort;
+    // Enforce the permission mode picked in the app. The override also applies to
+    // later turns of this chat (in VS Code too), so send it only when it changes.
+    const wanted = SANDBOX_POLICY[this.mode];
+    if (wanted && !sameSandbox(resumed?.sandbox, wanted)) {
+      params.sandboxPolicy = wanted;
+      this.emit('messages', [{ role: 'system', text: `Codex permissions for this chat set to ${this.mode} (also for the next turns in VS Code).` }]);
+    }
     const response = await this.request('turn/start', params, 30_000);
     this.turnId = response?.turn?.id || this.turnId;
     this.emit('started', this.turnId);
+    // Stop was pressed while the turn was being created.
+    if (this.cancelRequested) this.cancel();
     return this;
+  }
+
+  /** Requests from the daemon (approvals, questions) must always get an answer. */
+  answer(message) {
+    const { id, method, params } = message;
+    if (params?.threadId && params.threadId !== this.threadId) return;
+    const result = DECLINE[method];
+    if (result) {
+      const what = params?.command ? `run \`${Array.isArray(params.command) ? params.command.join(' ') : params.command}\`` : method.includes('fileChange') ? 'change files' : 'continue';
+      this.emit('messages', [{ role: 'system', text: `Codex asked for permission to ${what}: declined from the phone. Approve it on the PC, or pick a wider permission mode.` }]);
+      this.ws.send(JSON.stringify({ id, result }));
+    } else {
+      this.ws.send(JSON.stringify({ id, error: { code: -32601, message: `${method} is not supported by Agent Bridge` } }));
+    }
   }
 
   onMessage(raw) {
     let message;
     try { message = JSON.parse(String(raw)); } catch { return; }
+    if (message.id != null && message.method) return this.answer(message);
     if (message.id != null) {
       const pending = this.pending.get(String(message.id));
       if (!pending) return;
@@ -147,6 +217,11 @@ export class CodexDaemonTurn extends EventEmitter {
 
   async cancel() {
     if (this.finished) return;
+    if (!this.turnId && this.ws && !this.cancelRequested) {
+      // turn/start is still in flight: interrupt as soon as its id arrives.
+      this.cancelRequested = true;
+      return;
+    }
     if (this.turnId) {
       try { await this.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId }, 10_000); } catch { /* closing still cancels our job */ }
     }

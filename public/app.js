@@ -16,6 +16,7 @@ const state = {
   search: '',
   route: '',
   installPrompt: null,
+  duos: [],
 };
 
 const MODE_LABELS = {
@@ -30,11 +31,69 @@ const MODE_LABELS = {
 };
 const EFFORT_LABELS = { '': 'Default', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Very high', max: 'Max', ultra: 'Ultra' };
 const AGENT_LETTER = { claude: 'C', codex: 'X' };
+const SHORT_NAME = { claude: 'Claude', codex: 'Codex' };
+const otherAgent = (id) => (id === 'claude' ? 'codex' : 'claude');
+
+// ---------- settings (kept on the PC and shared by every device) ----------
+
+const DEFAULT_QUICK_PROMPTS = ['Continue', 'Run the tests and fix what fails', 'Explain what you changed', 'Commit with a clear message'];
+const HANDOFF_PRESETS = [
+  ['Review this and tell me what you would change.', 'Review it'],
+  ['Continue from here and finish the task.', 'Continue the work'],
+  ['Write tests for this.', 'Write tests'],
+  ['Explain this simply, in a few lines.', 'Explain it'],
+];
+// Per-device only: whether to sync at all.
+const LOCAL_PREFS = new Set(['sync']);
 
 const prefs = {
-  get(k, d) { try { const v = localStorage.getItem(`ab.${k}`); return v === null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(`ab.${k}`, JSON.stringify(v)); } catch { /* ignore */ } },
+  cache: {},
+  timer: null,
+  load() {
+    try { this.cache = JSON.parse(localStorage.getItem('ab.prefs') || 'null') || null; } catch { this.cache = null; }
+    if (!this.cache) {
+      // Older versions stored one localStorage key per setting.
+      this.cache = {};
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k.startsWith('ab.') && k !== 'ab.prefs') { try { this.cache[k.slice(3)] = JSON.parse(localStorage.getItem(k)); } catch { /* skip */ } }
+        }
+      } catch { /* storage blocked */ }
+    }
+  },
+  get(k, d) { return Object.hasOwn(this.cache, k) ? this.cache[k] : d; },
+  set(k, v) {
+    if (v === undefined) delete this.cache[k]; else this.cache[k] = v;
+    this.saveLocal();
+    if (!LOCAL_PREFS.has(k)) this.schedulePush();
+  },
+  saveLocal() { try { localStorage.setItem('ab.prefs', JSON.stringify(this.cache)); } catch { /* ignore */ } },
+  shared() { return Object.fromEntries(Object.entries(this.cache).filter(([k]) => !LOCAL_PREFS.has(k))); },
+  schedulePush() {
+    if (!this.get('sync', true) || !state.csrf) return;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => api('PUT', '/api/prefs', { prefs: this.shared() }).catch(() => {}), 500);
+  },
+  /** Settings changed on another device (or first load): the PC copy wins. */
+  adopt(remote) {
+    if (!this.get('sync', true) || !remote || typeof remote !== 'object') return false;
+    if (JSON.stringify(remote) === JSON.stringify(this.shared())) return false;
+    const local = Object.fromEntries(Object.entries(this.cache).filter(([k]) => LOCAL_PREFS.has(k)));
+    this.cache = { ...remote, ...local };
+    this.saveLocal();
+    return true;
+  },
 };
+prefs.load();
+
+async function syncPrefs() {
+  if (!prefs.get('sync', true)) return;
+  try {
+    const { prefs: remote } = await api('GET', '/api/prefs');
+    if (remote && Object.keys(remote).length) { if (prefs.adopt(remote)) applyAppearance(); } else if (Object.keys(prefs.shared()).length) prefs.schedulePush();
+  } catch { /* offline: keep the local copy */ }
+}
 
 // ---------- DOM helpers ----------
 
@@ -76,6 +135,14 @@ const ICONS = {
   eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
   screen: 'M3 4h18v12H3zM8 20h8M12 16v4',
+  duo: 'M8 7a4 4 0 1 0 0 8M16 7a4 4 0 1 1 0 8M8 11h8',
+  swap: 'M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7',
+  pin: 'M12 17v5M9 3h6l-1 6 4 4H6l4-4z',
+  edit: 'M4 20h4L20 8l-4-4L4 16zM14 6l4 4',
+  sparkle: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z',
+  trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+  check: 'M5 12l5 5L20 7',
+  x: 'M6 6l12 12M18 6 6 18',
 };
 
 function icon(name, cls = '') {
@@ -88,6 +155,11 @@ function icon(name, cls = '') {
   svg.append(p);
   return svg;
 }
+
+// Each navigation gets a number: a view that finishes loading after the user has
+// moved on must not replace the new page or take over its live updates.
+let viewSeq = 0;
+const viewGuard = () => { const mine = viewSeq; return () => mine !== viewSeq; };
 
 function mount(...nodes) {
   if (state.cleanup) { state.cleanup(); state.cleanup = null; }
@@ -118,14 +190,17 @@ function dayBucket(ms) {
   return 'Older';
 }
 
-const shortPath = (p) => (p || '').replace(/^\/home\/[^/]+/, '~');
-const baseName = (p) => (p || '').split('/').filter(Boolean).pop() || p || '';
+// Home folders on Linux (/home/x), macOS (/Users/x) and Windows (C:\\Users\\x).
+const shortPath = (p) => (p || '').replace(/^(\/home\/[^/]+|\/Users\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)(?=$|[\\/])/, '~');
+const baseName = (p) => (p || '').split(/[\\/]/).filter(Boolean).pop() || p || '';
+const joinPath = (dir, name) => `${dir}${/[\\/]$/.test(dir) ? '' : dir.includes('\\') && !dir.includes('/') ? '\\' : '/'}${name}`;
 const agentById = (id) => state.me?.agents.find((a) => a.id === id);
 const agentName = (id) => agentById(id)?.name || id;
 const agentClass = (id) => (id === 'claude' || id === 'codex' ? id : 'custom');
 const avatar = (agent) => h('span', { class: `avatar ${agentClass(agent)}`, 'aria-hidden': 'true' }, AGENT_LETTER[agent] || (agent || '?')[0].toUpperCase());
 const runningFor = (sessionId) => state.jobs.filter((j) => j.status === 'running' && (j.sessionId === sessionId || (j.resumeOf === sessionId && !j.fork)));
-const STATUS_LABELS = { running: 'running', done: 'done', failed: 'failed', cancelled: 'stopped' };
+const STATUS_LABELS = { running: 'running', done: 'done', failed: 'failed', cancelled: 'stopped', waiting: 'waiting', skipped: 'skipped' };
+const ROLE_LABELS = { work: 'does the task', review: 'reviews', apply: 'applies the fixes', answer: 'answers' };
 
 // ---------- toasts ----------
 
@@ -143,6 +218,7 @@ function toast(message, { kind = 'info', action, onAction, timeout = 5000 } = {}
 // ---------- waiting activity ----------
 
 function showWaitingRoom(initialJob) {
+  if (prefs.get('waitingActivity', 'happydev') === 'none') return;
   const previous = document.querySelector('.waiting-dialog');
   if (previous) previous.close?.();
   let job = initialJob;
@@ -198,6 +274,7 @@ function showWaitingRoom(initialJob) {
   const update = (event) => { if (event.detail?.id === job.id) { job = event.detail; draw(); } };
   document.addEventListener('agentbridge:job', update);
   const poll = setInterval(async () => {
+    if (document.visibilityState !== 'visible') return;
     try {
       const current = await api('GET', `/api/jobs/${job.id}`);
       job = current.job;
@@ -247,12 +324,23 @@ async function apiRaw(method, path, blob) {
 
 const quiet = (e) => { if (!(e instanceof AuthError)) toast(e.message, { kind: 'error' }); };
 
-function applyTheme() {
+const ACCENTS = [['violet', 'Violet'], ['blue', 'Blue'], ['teal', 'Teal'], ['green', 'Green'], ['amber', 'Amber'], ['rose', 'Rose'], ['graphite', 'Graphite']];
+
+/** Appearance lives in data-* attributes on <html>: our CSP forbids inline styles. */
+function applyAppearance() {
+  const root = document.documentElement;
   const t = prefs.get('theme', 'auto');
-  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', t);
+  if (t === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+  root.setAttribute('data-accent', prefs.get('accent', 'violet'));
+  root.setAttribute('data-text', prefs.get('textSize', 'm'));
+  root.setAttribute('data-density', prefs.get('density', 'comfortable'));
+  root.setAttribute('data-chat', prefs.get('chatStyle', 'bubbles'));
+  const dark = t === 'dark' || t === 'black' || (t === 'auto' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'black' ? '#000000' : dark ? '#0b0d12' : '#f5f6fa');
 }
-applyTheme();
+const applyTheme = applyAppearance;
+applyAppearance();
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyAppearance);
 
 function onLoggedOut() {
   state.csrf = null;
@@ -272,7 +360,20 @@ function trackJobs(jobs) {
   }
 }
 
+function trackDuos(duos) {
+  for (const d of duos) {
+    const prev = state.duos.find((x) => x.id === d.id);
+    if (prev?.status === 'running' && d.status !== 'running' && state.route !== `#/d/${d.id}`) {
+      const ok = d.status === 'done';
+      toast(`${ok ? '✓' : '✕'} Duo ${ok ? 'finished' : STATUS_LABELS[d.status] || 'ended'}: ${d.promptPreview}`, { kind: ok ? 'ok' : 'error', action: 'Open', onAction: () => { location.hash = `#/d/${d.id}`; }, timeout: 9000 });
+    }
+  }
+  state.duos = duos;
+}
+
 function notifyJobEnd(j) {
+  // Steps of a duo are announced once, when the whole duo ends.
+  if (j.duo) return;
   const r = state.route;
   const here = r === `#/j/${j.id}` || (j.sessionId && r.endsWith(`/${j.sessionId}`)) || (j.resumeOf && !j.fork && r.endsWith(`/${j.resumeOf}`));
   if (here) return;
@@ -290,6 +391,8 @@ function connectWs() {
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
     if (msg.type === 'jobs') { state.jobs = msg.jobs; trackJobs(msg.jobs); updateJobsBadge(); }
+    if (msg.type === 'duos') trackDuos(msg.duos);
+    if (msg.type === 'prefs' && prefs.adopt(msg.prefs)) applyAppearance();
     state.onWs?.(msg);
   };
   ws.onclose = (e) => {
@@ -392,12 +495,15 @@ function updateJobsBadge() {
 }
 
 function tabbar(active) {
-  const tab = (id, href, ic, label, extra) => h('a', { class: `tab${active === id ? ' active' : ''}`, href, 'aria-current': active === id ? 'page' : null }, icon(ic), h('span', {}, label), extra);
+  const tab = (id, href, ic, label, extra) => h('a', { class: `tab${active === id ? ' active' : ''}`, href, 'aria-current': active === id ? 'page' : null, 'data-tab': id }, icon(ic), h('span', {}, label), extra);
   const bar = h('nav', { class: 'tabbar', 'aria-label': 'Navigation' },
-    tab('sessions', '#/', 'chats', 'Sessions'),
+    h('a', { class: 'brand', href: '#/', 'aria-label': 'Agent Bridge' }, h('img', { src: '/icon.svg', alt: '' }), h('span', {}, 'Agent Bridge')),
+    tab('sessions', '#/', 'chats', 'Chats'),
     tab('new', '#/new', 'plus', 'New'),
+    state.me?.duo ? tab('duo', '#/duo', 'duo', 'Duo') : null,
     tab('jobs', '#/jobs', 'activity', 'Activity', h('span', { class: 'jobs-badge', hidden: true })),
-    tab('settings', '#/settings', 'settings', 'Settings'));
+    tab('settings', '#/settings', 'settings', 'Settings'),
+    h('div', { class: 'rail-foot muted small' }, state.me?.host || ''));
   queueMicrotask(updateJobsBadge);
   return bar;
 }
@@ -409,12 +515,15 @@ function header({ title, subtitle, back, actions }) {
     actions || null);
 }
 
-function page({ tab, title, subtitle, back, actions, body, bottom }) {
+// On phones the tab bar shows only on top-level pages; on wide screens it is a
+// sidebar that stays visible everywhere (`section` keeps the right item lit).
+function page({ tab, section, title, subtitle, back, actions, body, bottom }) {
   return h('div', { class: `shell${tab ? ' has-tabs' : ''}${bottom ? ' has-dock' : ''}` },
-    header({ title, subtitle, back, actions }),
-    h('main', {}, body),
-    bottom || null,
-    tab ? tabbar(tab) : null);
+    tabbar(tab || section || null),
+    h('div', { class: 'content' },
+      header({ title, subtitle, back, actions }),
+      h('main', {}, body),
+      bottom || null));
 }
 
 // ---------- markdown (safe: DOM nodes only) ----------
@@ -754,7 +863,7 @@ function autoGrow(ta, tall = false) {
  * Prompt composer: option pills, photos, voice, textarea, send. Resumable agents
  * always continue their canonical project conversation; no accidental branches.
  */
-function composer({ getAgent, placeholder, session, onSubmit, dock = true }) {
+function composer({ getAgent, placeholder, session, onSubmit, dock = true, allowImages = true }) {
   const ta = h('textarea', { placeholder, maxlength: String(state.me.maxPromptChars), rows: '1', enterkeyhint: 'enter', 'aria-label': 'Prompt' });
   const taWrap = autoGrow(ta, !dock);
   const status = h('div', { class: 'status muted small' });
@@ -769,6 +878,17 @@ function composer({ getAgent, placeholder, session, onSubmit, dock = true }) {
   } }, icon('screen', 'xs'), 'Chat VS Code');
   const continuousPill = h('span', { class: 'pill', title: 'Prompts stay in the same conversation per agent and folder' }, icon('link', 'xs'), 'Continuous chat');
 
+  const quick = h('div', { class: 'quick', 'aria-label': 'Quick prompts' });
+  const drawQuick = () => {
+    const list = prefs.get('quickPrompts', DEFAULT_QUICK_PROMPTS).filter((q) => typeof q === 'string' && q.trim());
+    fill(quick, list.map((q) => h('button', { type: 'button', class: 'chip small', title: q, onclick: () => {
+      ta.value = ta.value.trim() ? `${ta.value.trimEnd()}\n${q}` : q;
+      ta.dispatchEvent(new Event('input'));
+      ta.focus();
+    } }, q)), h('a', { class: 'chip small ghost', href: '#/settings/personalize', 'aria-label': 'Edit quick prompts', title: 'Edit quick prompts' }, icon('edit', 'xs')));
+    quick.hidden = !prefs.get('showQuick', true);
+  };
+  drawQuick();
   const drawThumbs = () => fill(thumbs, images.map((img, i) => h('div', { class: 'thumb' },
     h('img', { src: img.url, alt: `Image ${i + 1}` }),
     h('button', { type: 'button', 'aria-label': 'Remove image', onclick: () => { images.splice(i, 1); drawThumbs(); } }, '×'))));
@@ -797,8 +917,8 @@ function composer({ getAgent, placeholder, session, onSubmit, dock = true }) {
     const a = agentById(getAgent());
     opts = agentOptions(getAgent());
     fill(pillsWrap, session?.live ? livePill : null, a?.resumable ? continuousPill : null, [...opts.el.childNodes]);
-    photoBtn.hidden = !a?.images;
-    if (!a?.images && images.length) { images.length = 0; drawThumbs(); }
+    photoBtn.hidden = !a?.images || !allowImages;
+    if ((!a?.images || !allowImages) && images.length) { images.length = 0; drawThumbs(); }
   };
 
   const sendBtn = h('button', { class: 'send', type: 'submit', 'aria-label': 'Send' }, icon('send'));
@@ -822,149 +942,16 @@ function composer({ getAgent, placeholder, session, onSubmit, dock = true }) {
       sendBtn.disabled = false;
     }
   } },
-  pillsWrap, thumbs,
+  pillsWrap, quick, thumbs,
   h('div', { class: 'inputbar' }, photoBtn, fileInput, taWrap, mic, keyboardBtn, sendBtn),
   status);
   refresh();
   return { form, ta, refresh };
 }
 
-// ---------- views ----------
+// ---------- folder picker ----------
 
-async function renderSessions() {
-  const listEl = h('div', { class: 'groups' });
-  const search = h('input', { type: 'search', placeholder: 'Search sessions', value: state.search, 'aria-label': 'Search sessions', class: 'search' });
-  const chips = h('div', { class: 'chips' });
-  const agents = [['all', 'All'], ...state.me.agents.filter((a) => a.resumable).map((a) => [a.id, a.name])];
-
-  const row = (s) => {
-    const running = runningFor(s.id).length > 0;
-    return h('a', { class: 'row-item', href: `#/s/${s.agent}/${s.id}` },
-      avatar(s.agent),
-      h('div', { class: 'grow' },
-        h('div', { class: 'row-top' }, h('span', { class: 't' }, s.title || '(untitled)'), h('span', { class: 'time' }, relTime(s.updated))),
-        h('div', { class: 'row-sub' },
-          running ? h('span', { class: 'tag live' }, h('span', { class: 'live-dot' }), 'running') : null,
-          s.live ? h('span', { class: 'tag ok' }, icon('screen', 'xs'), 'chat listening') : null,
-          s.busy ? h('span', { class: 'tag' }, 'open in VS Code') : /vscode/i.test(s.origin || '') ? h('span', { class: 'tag subtle' }, 'VS Code') : null,
-          h('span', { class: 'folder', title: s.cwd || '' }, icon('folder', 'xs'), baseName(s.cwd)))));
-  };
-
-  const draw = () => {
-    fill(chips, agents.map(([id, name]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === id), onclick: () => { state.filter = id; draw(); } }, name)));
-    if (!state.sessionsCache) return fill(listEl, h('div', { class: 'empty' }, h('span', { class: 'spinner' })));
-    const q = state.search.toLowerCase();
-    const items = state.sessionsCache.filter((s) => (state.filter === 'all' || s.agent === state.filter) && (!q || `${s.title} ${s.cwd}`.toLowerCase().includes(q)));
-    if (!items.length) return fill(listEl, h('div', { class: 'empty' }, h('p', {}, q ? 'No results.' : 'No sessions.'), h('a', { class: 'btn primary', href: '#/new' }, 'New prompt')));
-    const groups = new Map();
-    for (const s of items) {
-      const k = dayBucket(s.updated);
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(s);
-    }
-    fill(listEl, [...groups].map(([k, arr]) => h('section', { class: 'group' }, h('h2', { class: 'group-title' }, k), h('div', { class: 'card list-card' }, arr.map(row)))));
-  };
-  search.addEventListener('input', () => { state.search = search.value; draw(); });
-
-  mount(page({
-    tab: 'sessions', title: 'Sessions', subtitle: state.me.host,
-    actions: h('a', { class: 'icon-btn accent', href: '#/new', 'aria-label': 'New prompt' }, icon('plus')),
-    body: [h('div', { class: 'searchbar' }, search, chips), listEl],
-  }));
-  draw();
-
-  const load = async () => {
-    try { state.sessionsCache = (await api('GET', '/api/sessions')).sessions; draw(); } catch (e) { quiet(e); }
-  };
-  await load();
-  const t = setInterval(load, 10000);
-  state.onWs = (msg) => { if (msg.type === 'jobs') draw(); };
-  state.cleanup = () => clearInterval(t);
-}
-
-async function renderSession(agent, id) {
-  mount(page({ title: agentName(agent), back: '#/', body: h('div', { class: 'empty' }, h('span', { class: 'spinner' })) }));
-  let data;
-  try { data = await api('GET', `/api/sessions/${agent}/${id}`); } catch (e) { quiet(e); return; }
-  const s = data.session;
-  const thread = threadView(agent);
-  const runningBar = h('div', { class: 'running-bar', hidden: true });
-  const fab = scrollDownButton();
-
-  const intro = h('div', { class: 'session-intro' },
-    h('div', { class: 'folder big', title: s.cwd }, icon('folder', 'xs'), shortPath(s.cwd)),
-    h('div', { class: 'muted small' }, `${/vscode/i.test(s.origin || '') ? 'Started in VS Code' : s.origin || ''} · updated ${ago(s.updated)}`),
-    data.truncated ? h('div', { class: 'notice small' }, 'Showing only the latest messages.') : null,
-    thread.toggles);
-
-  const drawRunning = () => {
-    const mine = state.jobs.filter((j) => j.resumeOf === id || j.sessionId === id);
-    const running = mine.filter((j) => j.status === 'running' && !j.fork);
-    const forked = mine.find((j) => j.resumeOf === id && j.sessionId && j.sessionId !== id);
-    thread.setWorking(running.length > 0, 'working…');
-    runningBar.hidden = !running.length && !forked;
-    fill(runningBar,
-      running.map((j) => h('div', { class: 'row gap' }, h('span', { class: 'live-dot' }), h('span', { class: 'grow small' }, `${agentName(agent)} is working`),
-        h('a', { class: 'btn small ghost', href: `#/j/${j.id}` }, 'Details'),
-        h('button', { class: 'btn small danger', type: 'button', onclick: () => api('POST', `/api/jobs/${j.id}/cancel`, {}).catch(quiet) }, icon('stop', 'xs'), 'Stop'))),
-      forked ? h('div', { class: 'small' }, forked.fork ? 'Copy created: ' : 'The reply continued in a new session: ', h('a', { href: `#/s/${agent}/${forked.sessionId}` }, 'open it')) : null);
-  };
-
-  let bottom;
-  if (s.canSend) {
-    const c = composer({
-      getAgent: () => agent,
-      placeholder: `Message ${agentName(agent)}…`,
-      session: s,
-      onSubmit: async ({ toChat, ...payload }) => {
-        if (toChat) {
-          const r = await api('POST', '/api/jobs', { agent, sessionId: id, target: 'chat', prompt: payload.prompt });
-          thread.add([{ id: `chat-${Date.now()}`, local: true, role: 'user', text: payload.prompt, ts: new Date().toISOString() }], true);
-          thread.setWorking(true, 'replying in the VS Code chat…');
-          if (r.job) showWaitingRoom(r.job);
-          return;
-        }
-        const r = await api('POST', '/api/jobs', { agent, sessionId: id, ...payload });
-        state.jobs = [r.job, ...state.jobs.filter((j) => j.id !== r.job.id)];
-        state.jobStatus.set(r.job.id, 'running');
-        if (r.job.fork) { location.hash = `#/j/${r.job.id}`; return; }
-        thread.add([{ id: `local-${r.job.id}`, local: true, role: 'user', text: payload.prompt, ts: new Date().toISOString() }], true);
-        drawRunning();
-        showWaitingRoom(r.job);
-      },
-    });
-    bottom = h('div', { class: 'dock' },
-      s.busy ? h('div', { class: 'notice small' }, 'Open in VS Code. The prompt goes into this same conversation and the VS Code tab refreshes when the reply ends.') : null,
-      runningBar, c.form);
-  } else {
-    bottom = h('div', { class: 'dock' }, h('div', { class: 'notice warn small' }, 'Folder outside the allowed workspaces. Read-only.'));
-  }
-
-  mount(page({
-    title: s.title || '(untitled)', subtitle: `${agentName(agent)} · ${baseName(s.cwd)}`, back: '#/',
-    body: [intro, thread.el, fab.btn], bottom,
-  }));
-  thread.add(data.messages, true);
-  drawRunning();
-
-  state.resubscribe = () => wsSend({ type: 'sub-session', agent, id });
-  state.resubscribe();
-  state.onWs = (msg) => {
-    if (msg.type === 'session-messages' && msg.id === id) thread.add(msg.messages);
-    if (msg.type === 'jobs') drawRunning();
-  };
-  state.cleanup = () => { wsSend({ type: 'unsub' }); fab.dispose(); };
-}
-
-async function renderNew() {
-  const agents = state.me.agents;
-  if (!agents.length) return mount(page({ tab: 'new', title: 'New prompt', body: h('p', {}, 'No agents enabled in the configuration.') }));
-  let agent = prefs.get('lastAgent', agents[0].id);
-  if (!agents.some((a) => a.id === agent)) agent = agents[0].id;
-  const seg = h('div', { class: 'segmented', role: 'radiogroup', 'aria-label': 'Agent' });
-  let c;
-  const drawSeg = () => fill(seg, agents.map((a) => h('button', { type: 'button', role: 'radio', 'aria-checked': String(a.id === agent), onclick: () => { agent = a.id; prefs.set('lastAgent', agent); drawSeg(); c.refresh(); } }, avatar(a.id), a.name)));
-
+function folderPicker() {
   const ws = state.me.workspaces;
   let cwd = prefs.get('lastCwd', ws.recent[0] || ws.roots[0] || '');
   const cwdLabel = h('div', { class: 'folder big' });
@@ -983,16 +970,260 @@ async function renderNew() {
       dirList.hidden = false;
       fill(dirList,
         r.parent ? h('button', { type: 'button', onclick: () => browse(r.parent) }, '↑  Parent folder') : null,
-        r.dirs.map((d) => h('button', { type: 'button', onclick: () => browse(`${r.path}/${d}`) }, icon('folder', 'xs'), d)),
+        r.dirs.map((d) => h('button', { type: 'button', onclick: () => browse(joinPath(r.path, d)) }, icon('folder', 'xs'), d)),
         h('button', { type: 'button', class: 'done', onclick: () => { dirList.hidden = true; } }, `✓ Use “${baseName(r.path)}”`));
     } catch (e) { quiet(e); }
   };
+  const el = h('div', { class: 'card pad folder-card' }, cwdLabel, recent,
+    h('button', { type: 'button', class: 'btn small ghost mt8', onclick: () => browse(cwd || ws.roots[0]) }, icon('folder', 'xs'), 'Browse folders…'), dirList);
+  return { el, get: () => cwd };
+}
+
+// ---------- sheets (small dialogs) ----------
+
+function sheet(title, body, { actions = [], label } = {}) {
+  const close = h('button', { type: 'button', class: 'icon-btn ghost', 'aria-label': 'Close' }, icon('x'));
+  const dialog = h('dialog', { class: 'sheet', 'aria-label': label || title },
+    h('div', { class: 'sheet-head' }, h('strong', { class: 'grow' }, title), close),
+    h('div', { class: 'sheet-body' }, body),
+    actions.length ? h('div', { class: 'sheet-actions' }, actions) : null);
+  close.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+  document.body.append(dialog);
+  if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
+  return dialog;
+}
+
+// ---------- local names and pins for chats ----------
+
+const chatName = (s) => prefs.get('names', {})[s.id] || s.title || '(untitled)';
+const isPinned = (id) => prefs.get('pinned', []).includes(id);
+function togglePin(id) {
+  const list = prefs.get('pinned', []).filter((x) => x !== id);
+  if (!isPinned(id)) list.unshift(id);
+  prefs.set('pinned', list.slice(0, 50));
+}
+function renameChat(s, done) {
+  const input = h('input', { type: 'text', value: chatName(s), maxlength: '120', 'aria-label': 'Name' });
+  const save = h('button', { type: 'button', class: 'btn primary' }, 'Save');
+  const reset = h('button', { type: 'button', class: 'btn ghost' }, 'Use the original title');
+  const d = sheet('Rename chat', [h('label', { class: 'field' }, h('span', {}, 'Name shown on all your devices'), input)], { actions: [reset, save] });
+  const put = (value) => {
+    const names = { ...prefs.get('names', {}) };
+    if (value) names[s.id] = value; else delete names[s.id];
+    prefs.set('names', names);
+    d.close();
+    done?.();
+  };
+  save.addEventListener('click', () => put(input.value.trim().slice(0, 120)));
+  reset.addEventListener('click', () => put(''));
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save.click(); } });
+  input.select();
+}
+
+// ---------- Claude ⇄ Codex ----------
+
+/** Pass the latest reply of a chat or job to the other agent, with an instruction. */
+function handoff({ agent, sessionId, jobId }) {
+  const to = otherAgent(agent);
+  if (!state.me.duo || !agentById(to)) return toast(`${SHORT_NAME[to]} is not enabled on the PC.`, { kind: 'error' });
+  const custom = prefs.get('handoffPresets', null);
+  const presets = Array.isArray(custom) && custom.length ? custom.map((t) => [t, t]) : HANDOFF_PRESETS;
+  let choice = presets[0][0];
+  const text = h('textarea', { rows: '3', maxlength: '4000', placeholder: 'Or write your own instruction…', 'aria-label': 'Instruction' });
+  const list = h('div', { class: 'choice-list', role: 'radiogroup' });
+  const draw = () => fill(list, presets.map(([value, label]) => h('button', { type: 'button', role: 'radio', class: 'choice', 'aria-checked': String(choice === value && !text.value.trim()), onclick: () => { choice = value; text.value = ''; draw(); } }, h('span', { class: 'radio-dot' }), label)));
+  text.addEventListener('input', draw);
+  draw();
+  const opts = agentOptions(to);
+  const send = h('button', { type: 'button', class: 'btn primary' }, icon('swap', 'xs'), `Send to ${SHORT_NAME[to]}`);
+  const d = sheet(`Ask ${SHORT_NAME[to]}`, [
+    h('p', { class: 'muted small' }, `${SHORT_NAME[to]} gets ${SHORT_NAME[agent] || agentName(agent)}'s latest reply and your instruction, in its own chat for this folder.`),
+    list, text, h('div', { class: 'pills mt8' }, [...opts.el.childNodes])], { actions: [send] });
+  send.addEventListener('click', async () => {
+    send.disabled = true;
+    try {
+      const r = await api('POST', '/api/handoff', { from: agent, sessionId, jobId, to, instruction: text.value.trim() || choice, options: opts.values() });
+      d.close();
+      state.jobStatus.set(r.job.id, 'running');
+      location.hash = `#/j/${r.job.id}`;
+    } catch (e) { quiet(e); send.disabled = false; }
+  });
+}
+
+// ---------- views ----------
+
+async function renderSessions() {
+  const listEl = h('div', { class: 'groups' });
+  const search = h('input', { type: 'search', placeholder: 'Search chats and folders', value: state.search, 'aria-label': 'Search chats', class: 'search' });
+  const chips = h('div', { class: 'chips' });
+  const agents = [['all', 'All'], ...state.me.agents.filter((a) => a.resumable).map((a) => [a.id, a.name])];
+
+  const row = (s) => {
+    const running = runningFor(s.id).length > 0;
+    return h('a', { class: 'row-item', href: `#/s/${s.agent}/${s.id}` },
+      avatar(s.agent),
+      h('div', { class: 'grow' },
+        h('div', { class: 'row-top' }, isPinned(s.id) ? icon('pin', 'xs pin-ic') : null, h('span', { class: 't' }, chatName(s)), h('span', { class: 'time' }, relTime(s.updated))),
+        h('div', { class: 'row-sub' },
+          running ? h('span', { class: 'tag live' }, h('span', { class: 'live-dot' }), 'running') : null,
+          s.live ? h('span', { class: 'tag ok' }, icon('screen', 'xs'), 'chat listening') : null,
+          s.busy ? h('span', { class: 'tag' }, 'open in VS Code') : /vscode/i.test(s.origin || '') ? h('span', { class: 'tag subtle' }, 'VS Code') : null,
+          h('span', { class: 'folder', title: s.cwd || '' }, icon('folder', 'xs'), baseName(s.cwd)))));
+  };
+
+  const draw = () => {
+    fill(chips, agents.map(([id, name]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === id), onclick: () => { state.filter = id; draw(); } }, name)));
+    if (!state.sessionsCache) return fill(listEl, h('div', { class: 'empty' }, h('span', { class: 'spinner' })));
+    const q = state.search.toLowerCase();
+    const items = state.sessionsCache.filter((s) => (state.filter === 'all' || s.agent === state.filter) && (!q || `${chatName(s)} ${s.title} ${s.cwd}`.toLowerCase().includes(q)));
+    if (!items.length) return fill(listEl, h('div', { class: 'empty' }, h('div', { class: 'empty-art' }, icon('chats')), h('p', {}, q ? 'No results.' : 'No chats yet. Start one from here or from VS Code.'), h('a', { class: 'btn primary', href: '#/new' }, icon('plus', 'xs'), 'New prompt')));
+    const groups = new Map(items.some((s) => isPinned(s.id)) ? [['Pinned', []]] : []);
+    for (const s of items) {
+      const k = isPinned(s.id) ? 'Pinned' : dayBucket(s.updated);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(s);
+    }
+    fill(listEl, [...groups].map(([k, arr]) => h('section', { class: 'group' }, h('h2', { class: 'group-title' }, k), h('div', { class: 'card list-card' }, arr.map(row)))));
+  };
+  search.addEventListener('input', () => { state.search = search.value; draw(); });
+
+  mount(page({
+    tab: 'sessions', title: 'Chats', subtitle: `Claude Code and Codex on ${state.me.host}`,
+    actions: h('a', { class: 'icon-btn accent', href: '#/new', 'aria-label': 'New prompt' }, icon('plus')),
+    body: [h('div', { class: 'searchbar' }, search, chips), listEl],
+  }));
+  draw();
+
+  const stale = viewGuard();
+  const load = async () => {
+    try { const r = await api('GET', '/api/sessions'); if (!stale()) { state.sessionsCache = r.sessions; draw(); } } catch (e) { quiet(e); }
+  };
+  await load();
+  if (stale()) return;
+  // No polling from a hidden tab: it would keep the login alive forever.
+  const t = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 10000);
+  state.onWs = (msg) => { if (msg.type === 'jobs') draw(); };
+  state.cleanup = () => clearInterval(t);
+}
+
+async function renderSession(agent, id) {
+  mount(page({ section: 'sessions', title: agentName(agent), back: '#/', body: h('div', { class: 'empty' }, h('span', { class: 'spinner' })) }));
+  const stale = viewGuard();
+  let data;
+  try { data = await api('GET', `/api/sessions/${agent}/${id}`); } catch (e) { quiet(e); return; }
+  if (stale()) return;
+  const s = data.session;
+  const thread = threadView(agent);
+  const runningBar = h('div', { class: 'running-bar', hidden: true });
+  const fab = scrollDownButton();
+
+  const intro = h('div', { class: 'session-intro' },
+    h('div', { class: 'folder big', title: s.cwd }, icon('folder', 'xs'), shortPath(s.cwd)),
+    h('div', { class: 'muted small' }, `${/vscode/i.test(s.origin || '') ? 'Started in VS Code' : s.origin || ''} · updated ${ago(s.updated)}`),
+    data.truncated ? h('div', { class: 'notice small' }, 'Showing only the latest messages.') : null,
+    thread.toggles);
+
+  const drawRunning = () => {
+    const mine = state.jobs.filter((j) => j.resumeOf === id || j.sessionId === id);
+    const running = mine.filter((j) => j.status === 'running' && !j.fork);
+    const forked = mine.find((j) => j.resumeOf === id && j.sessionId && j.sessionId !== id);
+    thread.setWorking(running.length > 0 || waitingChat, running.length ? 'working…' : 'replying in the VS Code chat…');
+    runningBar.hidden = !running.length && !forked;
+    fill(runningBar,
+      running.map((j) => h('div', { class: 'row gap' }, h('span', { class: 'live-dot' }), h('span', { class: 'grow small' }, `${agentName(agent)} is working`),
+        h('a', { class: 'btn small ghost', href: `#/j/${j.id}` }, 'Details'),
+        h('button', { class: 'btn small danger', type: 'button', onclick: () => api('POST', `/api/jobs/${j.id}/cancel`, {}).catch(quiet) }, icon('stop', 'xs'), 'Stop'))),
+      forked ? h('div', { class: 'small' }, forked.fork ? 'Copy created: ' : 'The reply continued in a new session: ', h('a', { href: `#/s/${agent}/${forked.sessionId}` }, 'open it')) : null);
+  };
+
+  let bottom;
+  let chatWait = null;
+  let waitingChat = false;
+  if (s.canSend) {
+    const c = composer({
+      getAgent: () => agent,
+      placeholder: `Message ${agentName(agent)}…`,
+      session: s,
+      onSubmit: async ({ toChat, ...payload }) => {
+        if (toChat) {
+          const r = await api('POST', '/api/jobs', { agent, sessionId: id, target: 'chat', prompt: payload.prompt });
+          thread.add([{ id: `chat-${Date.now()}`, local: true, role: 'user', text: payload.prompt, ts: new Date().toISOString() }], true);
+          thread.setWorking(true, 'replying in the VS Code chat…');
+          // Cleared by the reply itself; the timeout covers a chat that never answers.
+          clearTimeout(chatWait);
+          chatWait = setTimeout(() => drawRunning(), 3 * 60 * 1000);
+          waitingChat = true;
+          return;
+        }
+        const r = await api('POST', '/api/jobs', { agent, sessionId: id, ...payload });
+        state.jobs = [r.job, ...state.jobs.filter((j) => j.id !== r.job.id)];
+        state.jobStatus.set(r.job.id, 'running');
+        if (r.job.fork) { location.hash = `#/j/${r.job.id}`; return; }
+        thread.add([{ id: `local-${r.job.id}`, local: true, role: 'user', text: payload.prompt, ts: new Date().toISOString() }], true);
+        drawRunning();
+        showWaitingRoom(r.job);
+      },
+    });
+    bottom = h('div', { class: 'dock' },
+      s.busy ? h('div', { class: 'notice small' }, 'Open in VS Code. The prompt goes into this same conversation and the VS Code tab refreshes when the reply ends.') : null,
+      runningBar, c.form);
+  } else {
+    bottom = h('div', { class: 'dock' }, h('div', { class: 'notice warn small' }, 'Folder outside the allowed workspaces. Read-only.'));
+  }
+
+  const title = h('span', {}, chatName(s));
+  const pin = h('button', { type: 'button', class: 'icon-btn ghost', 'aria-label': 'Pin chat', 'aria-pressed': String(isPinned(id)), onclick: () => { togglePin(id); pin.setAttribute('aria-pressed', String(isPinned(id))); toast(isPinned(id) ? 'Pinned to the top of Chats.' : 'Unpinned.', { timeout: 2000 }); } }, icon('pin'));
+  const rename = h('button', { type: 'button', class: 'icon-btn ghost', 'aria-label': 'Rename chat', onclick: () => renameChat(s, () => { title.textContent = chatName(s); }) }, icon('edit'));
+  const ask = state.me.duo && s.canSend && (agent === 'claude' || agent === 'codex')
+    ? h('button', { type: 'button', class: 'btn small soft handoff-btn', onclick: () => handoff({ agent, sessionId: id }) }, icon('swap', 'xs'), h('span', {}, `Ask ${SHORT_NAME[otherAgent(agent)]}`))
+    : null;
+  mount(page({
+    section: 'sessions', title, subtitle: `${agentName(agent)} · ${baseName(s.cwd)}`, back: '#/',
+    actions: h('div', { class: 'row actions' }, ask, rename, pin),
+    body: [intro, thread.el, fab.btn], bottom,
+  }));
+  thread.add(data.messages, true);
+  waitingChat = false;
+  drawRunning();
+
+  // After a reconnect (phone locked, network change) fetch what was written meanwhile:
+  // the live tail only starts from the end of the file.
+  let firstSub = true;
+  state.resubscribe = async () => {
+    wsSend({ type: 'sub-session', agent, id });
+    if (firstSub) { firstSub = false; return; }
+    try { const d = await api('GET', `/api/sessions/${agent}/${id}`); thread.add(d.messages); } catch { /* next reconnect */ }
+  };
+  state.resubscribe();
+  state.onWs = (msg) => {
+    if (msg.type === 'session-messages' && msg.id === id) {
+      thread.add(msg.messages);
+      if (waitingChat && msg.messages.some((m) => m.role === 'assistant')) { waitingChat = false; clearTimeout(chatWait); drawRunning(); }
+    }
+    if (msg.type === 'jobs') drawRunning();
+  };
+  state.cleanup = () => { wsSend({ type: 'unsub' }); fab.dispose(); clearTimeout(chatWait); };
+}
+
+async function renderNew() {
+  const agents = state.me.agents;
+  if (!agents.length) return mount(page({ tab: 'new', title: 'New prompt', body: h('p', {}, 'No agents enabled in the configuration.') }));
+  let agent = prefs.get('lastAgent', agents[0].id);
+  if (!agents.some((a) => a.id === agent)) agent = agents[0].id;
+  const seg = h('div', { class: 'segmented', role: 'radiogroup', 'aria-label': 'Agent' });
+  let c;
+  const drawSeg = () => fill(seg, agents.map((a) => h('button', { type: 'button', role: 'radio', 'aria-checked': String(a.id === agent), onclick: () => { agent = a.id; prefs.set('lastAgent', agent); drawSeg(); c.refresh(); } }, avatar(a.id), a.name)));
+
+  const folder = folderPicker();
 
   c = composer({
     getAgent: () => agent,
     placeholder: 'What should the agent do?',
     dock: false,
     onSubmit: async (payload) => {
+      const cwd = folder.get();
       const r = await api('POST', '/api/jobs', { agent, cwd, ...payload });
       prefs.set('lastCwd', cwd);
       state.jobStatus.set(r.job.id, 'running');
@@ -1007,19 +1238,20 @@ async function renderNew() {
     body: h('div', { class: 'new-form' },
       h('div', { class: 'section-label' }, 'Agent'), seg,
       h('div', { class: 'section-label' }, 'Folder'),
-      h('div', { class: 'card pad' }, cwdLabel, recent,
-        h('button', { type: 'button', class: 'btn small ghost mt8', onclick: () => browse(cwd || ws.roots[0]) }, 'Browse folders…'), dirList),
+      folder.el,
       h('div', { class: 'section-label' }, 'Prompt'),
-      h('div', { class: 'notice small' }, '🔗 Messages continue the same chat for this agent and folder.'),
+      h('div', { class: 'notice small' }, icon('link', 'xs'), ' Messages continue the same chat for this agent and folder.'),
       c.form),
   }));
   c.ta.focus();
 }
 
 async function renderJob(id) {
-  mount(page({ title: 'Activity', back: '#/jobs', body: h('div', { class: 'empty' }, h('span', { class: 'spinner' })) }));
+  mount(page({ section: 'jobs', title: 'Activity', back: '#/jobs', body: h('div', { class: 'empty' }, h('span', { class: 'spinner' })) }));
+  const stale = viewGuard();
   let data;
   try { data = await api('GET', `/api/jobs/${id}`); } catch (e) { quiet(e); return; }
+  if (stale()) return;
   let job = data.job;
   const thread = threadView(job.agent);
   const head = h('div', { class: 'session-intro' });
@@ -1033,14 +1265,17 @@ async function renderJob(id) {
         job.fork ? h('span', { class: 'tag' }, icon('branch', 'xs'), 'copy') : null,
         h('span', { class: 'muted small' }, [job.model || 'default model', job.effort && (EFFORT_LABELS[job.effort] || job.effort), job.mode && (MODE_LABELS[job.mode] || job.mode).split(' — ')[0], job.images ? `${job.images} images` : null].filter(Boolean).join(' · '))),
       h('div', { class: 'folder big mt8' }, icon('folder', 'xs'), shortPath(job.cwd)),
-      h('div', { class: 'row gap mt12' },
+      job.duo ? h('a', { class: 'notice small duo-link', href: `#/d/${job.duo.id}` }, icon('duo', 'xs'), `Part of a Claude + Codex duo (${ROLE_LABELS[job.duo.role] || job.duo.role}). Open the duo`) : null,
+      h('div', { class: 'row gap wrap mt12' },
         job.status === 'running' ? h('button', { class: 'btn danger', onclick: () => api('POST', `/api/jobs/${id}/cancel`, {}).catch(quiet) }, icon('stop', 'xs'), 'Stop') : null,
-        resumable ? h('a', { class: 'btn primary', href: `#/s/${job.agent}/${job.sessionId}` }, 'Open the conversation') : null),
+        resumable ? h('a', { class: 'btn primary', href: `#/s/${job.agent}/${job.sessionId}` }, 'Open the conversation') : null,
+        job.status === 'done' && state.me.duo && (job.agent === 'claude' || job.agent === 'codex')
+          ? h('button', { class: 'btn soft', type: 'button', onclick: () => handoff({ agent: job.agent, jobId: job.id }) }, icon('swap', 'xs'), `Ask ${SHORT_NAME[otherAgent(job.agent)]}`) : null),
       thread.toggles);
   };
   mount(page({
-    title: job.promptPreview, subtitle: `${agentName(job.agent)} · ${ago(job.started)}`, back: '#/jobs',
-    body: [head, h('div', { class: 'thread' }, bubble({ role: 'user', text: job.promptPreview + (job.promptPreview.length >= 120 ? '…' : '') }, job.agent)), thread.el, fab.btn],
+    section: 'jobs', title: job.promptPreview, subtitle: `${agentName(job.agent)} · ${ago(job.started)}`, back: '#/jobs',
+    body: [head, h('div', { class: 'thread' }, bubble({ role: 'user', text: data.prompt || job.promptPreview }, job.agent)), thread.el, fab.btn],
   }));
   drawHead();
   thread.add(data.events, true);
@@ -1067,19 +1302,173 @@ function renderJobs() {
       h('div', { class: 'row-sub' },
         j.status === 'running' ? h('span', { class: 'tag live' }, h('span', { class: 'live-dot' }), 'running') : h('span', { class: `tag status-${j.status}` }, STATUS_LABELS[j.status] || j.status),
         j.fork ? h('span', { class: 'tag subtle' }, 'copy') : null,
+        j.duo ? h('span', { class: 'tag subtle' }, icon('duo', 'xs'), ROLE_LABELS[j.duo.role] || 'duo') : null,
         h('span', { class: 'folder' }, icon('folder', 'xs'), baseName(j.cwd)))));
   const draw = () => {
-    if (!state.jobs.length) return fill(listEl, h('div', { class: 'empty' }, h('p', {}, 'No activity since the server started.'), h('a', { class: 'btn primary', href: '#/new' }, 'New prompt')));
+    if (!state.jobs.length && !state.duos.length) return fill(listEl, h('div', { class: 'empty' }, h('div', { class: 'empty-art' }, icon('activity')), h('p', {}, 'No activity since the server started.'), h('a', { class: 'btn primary', href: '#/new' }, icon('plus', 'xs'), 'New prompt')));
     const running = state.jobs.filter((j) => j.status === 'running');
     const rest = state.jobs.filter((j) => j.status !== 'running');
     fill(listEl,
+      state.duos.length ? h('section', { class: 'group' }, h('h2', { class: 'group-title' }, 'Duos'), h('div', { class: 'card list-card' }, state.duos.slice(0, 5).map(duoRow))) : null,
       running.length ? h('section', { class: 'group' }, h('h2', { class: 'group-title' }, 'Running'), h('div', { class: 'card list-card' }, running.map(row))) : null,
       rest.length ? h('section', { class: 'group' }, h('h2', { class: 'group-title' }, 'Finished'), h('div', { class: 'card list-card' }, rest.map(row))) : null);
   };
   mount(page({ tab: 'jobs', title: 'Activity', subtitle: 'Prompts sent from this app', body: listEl }));
   draw();
   api('GET', '/api/jobs').then((r) => { state.jobs = r.jobs; trackJobs(r.jobs); draw(); }).catch(quiet);
-  state.onWs = (msg) => { if (msg.type === 'jobs') draw(); };
+  state.onWs = (msg) => { if (msg.type === 'jobs' || msg.type === 'duos') draw(); };
+}
+
+// ---------- duo: Claude + Codex together ----------
+
+const DUO_KINDS = {
+  review: { label: 'Review', hint: 'One does the task, the other checks it.' },
+  compare: { label: 'Compare', hint: 'Both answer the same question. Nobody edits files.' },
+};
+
+function duoSteps(duo) {
+  return h('ol', { class: 'duo-steps' }, duo.steps.map((st, i) => h('li', { class: `duo-step status-${st.status}` },
+    h('span', { class: 'n' }, String(i + 1)), avatar(st.agent),
+    h('div', { class: 'grow' }, h('div', { class: 't' }, `${SHORT_NAME[st.agent]} ${ROLE_LABELS[st.role] || st.role}`),
+      h('div', { class: 'muted small' }, st.status === 'running' ? h('span', { class: 'row gap' }, h('span', { class: 'live-dot' }), 'working…') : STATUS_LABELS[st.status] || st.status)))));
+}
+
+function duoPlan(kind, lead, apply) {
+  const partner = otherAgent(lead);
+  const steps = kind === 'compare'
+    ? [{ agent: lead, role: 'answer' }, { agent: partner, role: 'answer' }]
+    : [{ agent: lead, role: 'work' }, { agent: partner, role: 'review' }, ...(apply ? [{ agent: lead, role: 'apply' }] : [])];
+  return duoSteps({ steps: steps.map((st) => ({ ...st, status: 'waiting' })) });
+}
+
+async function renderDuoNew() {
+  if (!state.me.duo) {
+    return mount(page({ tab: 'duo', title: 'Duo', body: h('div', { class: 'empty' }, h('p', {}, 'Duo needs both Claude Code and Codex enabled in the PC configuration.')) }));
+  }
+  let kind = prefs.get('duo.kind', 'review');
+  let lead = prefs.get('duo.lead', 'codex');
+  let apply = prefs.get('duo.apply', true);
+  if (!DUO_KINDS[kind]) kind = 'review';
+  if (!['claude', 'codex'].includes(lead)) lead = 'codex';
+  const kindSeg = h('div', { class: 'segmented', role: 'radiogroup', 'aria-label': 'Kind' });
+  const leadSeg = h('div', { class: 'segmented', role: 'radiogroup', 'aria-label': 'Who leads' });
+  const plan = h('div', { class: 'card pad duo-plan' });
+  const applyRow = h('label', { class: 'switch-row' }, h('span', {}, 'Then let the lead apply the fixes'),
+    h('input', { type: 'checkbox', class: 'switch', checked: apply, onchange: (e) => { apply = e.target.checked; prefs.set('duo.apply', apply); draw(); } }));
+  const folder = folderPicker();
+  let c;
+  const draw = () => {
+    fill(kindSeg, Object.entries(DUO_KINDS).map(([k, v]) => h('button', { type: 'button', role: 'radio', 'aria-checked': String(k === kind), onclick: () => { kind = k; prefs.set('duo.kind', k); draw(); } }, v.label)));
+    fill(leadSeg, ['codex', 'claude'].map((a) => h('button', { type: 'button', role: 'radio', 'aria-checked': String(a === lead), onclick: () => { lead = a; prefs.set('duo.lead', a); draw(); c.refresh(); } }, avatar(a), kind === 'compare' ? `${SHORT_NAME[a]} first` : `${SHORT_NAME[a]} leads`)));
+    applyRow.hidden = kind !== 'review';
+    fill(plan, h('p', { class: 'muted small' }, DUO_KINDS[kind].hint), duoPlan(kind, lead, apply));
+  };
+  c = composer({
+    getAgent: () => lead,
+    placeholder: kind === 'compare' ? 'Ask both…' : 'What should they do?',
+    dock: false,
+    allowImages: false,
+    onSubmit: async ({ prompt, model, effort, mode }) => {
+      const cwd = folder.get();
+      const r = await api('POST', '/api/duos', {
+        kind, lead, cwd, prompt, apply,
+        options: { [lead]: { model, effort, mode } },
+        reviewInstruction: prefs.get('duo.reviewInstruction', '') || undefined,
+      });
+      prefs.set('lastCwd', cwd);
+      location.hash = `#/d/${r.duo.id}`;
+    },
+  });
+  draw();
+  const recent = h('div', {});
+  const drawRecent = () => fill(recent, state.duos.length ? h('section', { class: 'group' }, h('h2', { class: 'group-title' }, 'Recent duos'), h('div', { class: 'card list-card' }, state.duos.slice(0, 10).map(duoRow))) : null);
+  mount(page({
+    tab: 'duo', title: 'Duo', subtitle: 'Claude Code and Codex on the same task',
+    body: h('div', { class: 'new-form' },
+      h('div', { class: 'section-label' }, 'How'), kindSeg,
+      h('div', { class: 'section-label' }, 'Who starts'), leadSeg,
+      plan, h('div', { class: 'card pad' }, applyRow),
+      h('div', { class: 'section-label' }, 'Folder'), folder.el,
+      h('div', { class: 'section-label' }, 'Task'), c.form,
+      recent),
+  }));
+  drawRecent();
+  api('GET', '/api/duos').then((r) => { state.duos = r.duos; drawRecent(); }).catch(() => {});
+  state.onWs = (msg) => { if (msg.type === 'duos') drawRecent(); };
+}
+
+function duoRow(d) {
+  return h('a', { class: 'row-item', href: `#/d/${d.id}` },
+    h('span', { class: 'avatar duo' }, icon('duo', 'sm')),
+    h('div', { class: 'grow' },
+      h('div', { class: 'row-top' }, h('span', { class: 't' }, d.promptPreview), h('span', { class: 'time' }, relTime(d.started))),
+      h('div', { class: 'row-sub' },
+        h('span', { class: `tag status-${d.status}` }, d.status === 'running' ? h('span', { class: 'live-dot' }) : null, STATUS_LABELS[d.status] || d.status),
+        h('span', {}, `${DUO_KINDS[d.kind]?.label || d.kind} · ${SHORT_NAME[d.lead]} + ${SHORT_NAME[d.partner]}`),
+        h('span', { class: 'folder' }, icon('folder', 'xs'), baseName(d.cwd)))));
+}
+
+async function renderDuo(id) {
+  mount(page({ section: 'duo', title: 'Duo', back: '#/duo', body: h('div', { class: 'empty' }, h('span', { class: 'spinner' })) }));
+  const stale = viewGuard();
+  let data;
+  try { data = await api('GET', `/api/duos/${id}`); } catch (e) { quiet(e); return; }
+  if (stale()) return;
+  let duo = data.duo;
+  const head = h('div', { class: 'session-intro' });
+  const tabs = h('div', { class: 'segmented duo-tabs', role: 'tablist' });
+  const panels = h('div', { class: 'duo-panels' });
+  const views = new Map(); // jobId -> { panel, thread }
+  let active = 0;
+
+  const drawHead = () => {
+    fill(head,
+      h('div', { class: 'row gap wrap' },
+        h('span', { class: `tag status-${duo.status}` }, duo.status === 'running' ? h('span', { class: 'live-dot' }) : null, STATUS_LABELS[duo.status] || duo.status),
+        h('span', { class: 'muted small' }, `${DUO_KINDS[duo.kind]?.label || duo.kind} · ${ago(duo.started)}`)),
+      h('div', { class: 'folder big mt8' }, icon('folder', 'xs'), shortPath(duo.cwd)),
+      h('div', { class: 'card pad mt12 duo-task' }, h('div', { class: 'muted small' }, 'Task'), h('div', { class: 'md' }, markdown(data.prompt || duo.promptPreview))),
+      duoSteps(duo),
+      duo.error ? h('div', { class: 'notice warn small' }, duo.error) : null,
+      duo.status === 'running' ? h('button', { class: 'btn danger mt8', type: 'button', onclick: () => api('POST', `/api/duos/${id}/cancel`, {}).catch(quiet) }, icon('stop', 'xs'), 'Stop the duo') : null);
+    const started = duo.steps.filter((st) => st.jobId);
+    fill(tabs, started.map((st, i) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(i === active), onclick: () => { active = i; drawHead(); } }, avatar(st.agent), `${i + 1}. ${SHORT_NAME[st.agent]}`)));
+    tabs.hidden = started.length < 2;
+    panels.setAttribute('data-count', String(started.length));
+    started.forEach((st, i) => {
+      let v = views.get(st.jobId);
+      if (!v) {
+        const thread = threadView(st.agent);
+        const panel = h('section', { class: 'duo-panel' },
+          h('div', { class: 'duo-panel-head' }, avatar(st.agent), h('strong', {}, `${i + 1}. ${SHORT_NAME[st.agent]} ${ROLE_LABELS[st.role] || st.role}`),
+            h('a', { class: 'btn small ghost', href: `#/j/${st.jobId}` }, 'Details')),
+          thread.el);
+        v = { panel, thread };
+        views.set(st.jobId, v);
+        panels.append(panel);
+        api('GET', `/api/jobs/${st.jobId}`).then((d) => { thread.add(d.events, false); thread.setWorking(d.job.status === 'running', 'working…'); }).catch(() => {});
+        subscribe();
+      }
+      v.panel.classList.toggle('active', i === active);
+      v.thread.setWorking(st.status === 'running', 'working…');
+    });
+  };
+  const subscribe = () => wsSend({ type: 'sub-jobs', ids: [...views.keys()] });
+
+  mount(page({
+    section: 'duo', title: duo.promptPreview, subtitle: `${SHORT_NAME[duo.lead]} + ${SHORT_NAME[duo.partner]}`, back: '#/duo',
+    body: [head, tabs, panels],
+  }));
+  drawHead();
+  state.resubscribe = subscribe;
+  state.onWs = (msg) => {
+    if (msg.type === 'duos') {
+      const d = msg.duos.find((x) => x.id === id);
+      if (d) { duo = d; drawHead(); }
+    }
+    if (msg.type === 'job-event') views.get(msg.id)?.thread.add([msg.event]);
+  };
+  state.cleanup = () => wsSend({ type: 'unsub' });
 }
 
 // ---------- settings ----------
@@ -1095,11 +1484,44 @@ const AUDIT_LABELS = {
   logout: ['↩', 'Signed out'], logout_all: ['⏻', 'All devices signed out'], device_revoked: ['⏻', 'Device signed out'],
   job_start: ['▶', 'Prompt sent'], job_end: ['■', 'Job ended'], job_cancel: ['■', 'Job stopped'],
   server_start: ['⚙', 'Server started'], lockout_cleared_locally: ['🔓', 'Lockout cleared on the PC'],
+  duo_start: ['⇄', 'Duo started'], duo_end: ['⇄', 'Duo ended'], duo_cancel: ['■', 'Duo stopped'], handoff: ['⇄', 'Reply passed to the other agent'],
+  chat_delivery: ['▶', 'Prompt sent to the VS Code chat'], codex_locked_retry: ['↻', 'Codex chat busy, retrying'],
 };
 const FAIL_REASONS = { password: 'wrong password', totp: 'wrong 2FA code', totp_replay: '2FA code already used', recovery: 'wrong recovery code', malformed: 'invalid request', totp_decrypt: '2FA secret error' };
 
-async function renderSettings() {
-  const section = (title, ...body) => h('section', { class: 'group' }, h('h2', { class: 'group-title' }, title), h('div', { class: 'card pad' }, ...body));
+/** A row of buttons bound to one setting. */
+function segmentedPref(key, def, options, after) {
+  const el = h('div', { class: 'segmented small', role: 'radiogroup' });
+  const draw = () => fill(el, options.map(([v, label]) => h('button', { type: 'button', role: 'radio', 'aria-checked': String(prefs.get(key, def) === v), 'data-value': v, onclick: () => { prefs.set(key, v); draw(); after?.(v); } }, label)));
+  draw();
+  return el;
+}
+
+/** Editable list of short texts (quick prompts, handoff instructions). */
+function listEditor(key, defaults, { placeholder, max = 12, maxLength = 300 } = {}) {
+  const el = h('div', { class: 'list-editor' });
+  const read = () => { const v = prefs.get(key, null); return Array.isArray(v) ? v : [...defaults]; };
+  const write = (list) => prefs.set(key, list.map((x) => x.slice(0, maxLength)).slice(0, max));
+  const draw = () => {
+    const list = read();
+    fill(el,
+      list.map((item, i) => {
+        const input = h('input', { type: 'text', value: item, maxlength: String(maxLength), 'aria-label': `Item ${i + 1}`, placeholder });
+        input.addEventListener('change', () => { const next = read(); next[i] = input.value.trim(); write(next.filter(Boolean)); draw(); });
+        return h('div', { class: 'list-row' }, input,
+          h('button', { type: 'button', class: 'icon-btn ghost', 'aria-label': `Move item ${i + 1} up`, disabled: i === 0, onclick: () => { const next = read(); [next[i - 1], next[i]] = [next[i], next[i - 1]]; write(next); draw(); } }, '↑'),
+          h('button', { type: 'button', class: 'icon-btn ghost', 'aria-label': `Remove item ${i + 1}`, onclick: () => { const next = read(); next.splice(i, 1); write(next); draw(); } }, icon('trash', 'sm')));
+      }),
+      h('div', { class: 'row gap mt8' },
+        list.length < max ? h('button', { type: 'button', class: 'btn small soft', onclick: () => { write([...read(), 'New prompt']); draw(); el.querySelector('.list-row:last-of-type input')?.select(); } }, icon('plus', 'xs'), 'Add') : null,
+        h('button', { type: 'button', class: 'btn small ghost', onclick: () => { prefs.set(key, undefined); draw(); } }, 'Reset to defaults')));
+  };
+  draw();
+  return el;
+}
+
+async function renderSettings(sub = '') {
+  const section = (title, id, ...body) => h('section', { class: 'group', id: id || null }, h('h2', { class: 'group-title' }, title), h('div', { class: 'card pad' }, ...body));
   const defaults = state.me.agents.filter((a) => a.models.length || a.modes.length).map((a) =>
     h('div', { class: 'sub' }, h('div', { class: 'sub-title' }, avatar(a.id), a.name), agentOptions(a.id, { asFields: true }).el));
   const select = (label, options, value, on) => {
@@ -1113,47 +1535,76 @@ async function renderSettings() {
     ? 'Local transcription on the PC (Whisper). Audio never leaves your computer.'
     : SR ? 'Whisper is not installed on the PC, so the browser\'s speech recognition is used (audio goes through Apple or Google servers).'
       : 'Microphone not available. Use the keyboard\'s microphone key.';
-  const check = (key, def, label) => h('label', { class: 'switch-row' }, h('span', {}, label), h('input', { type: 'checkbox', class: 'switch', checked: prefs.get(key, def), onchange: (e) => prefs.set(key, e.target.checked) }));
+  const check = (key, def, label, after) => h('label', { class: 'switch-row' }, h('span', {}, label), h('input', { type: 'checkbox', class: 'switch', checked: prefs.get(key, def), onchange: (e) => { prefs.set(key, e.target.checked); after?.(e.target.checked); } }));
+  const field = (label, control, hint) => h('div', { class: 'field' }, h('span', {}, label), control, hint ? h('p', { class: 'muted small mt8' }, hint) : null);
+
+  const swatches = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Accent colour' });
+  const drawSwatches = () => fill(swatches, ACCENTS.map(([v, label]) => h('button', { type: 'button', role: 'radio', class: 'swatch', 'data-swatch': v, 'aria-label': label, title: label, 'aria-checked': String(prefs.get('accent', 'violet') === v), onclick: () => { prefs.set('accent', v); applyAppearance(); drawSwatches(); } }, icon('check', 'xs'))));
+  drawSwatches();
+
+  const review = h('textarea', { rows: '4', maxlength: '4000', placeholder: 'Default: list concrete problems from most to least severe, each with file:line and a fix. Do not edit files.', 'aria-label': 'Review instruction' });
+  review.value = prefs.get('duo.reviewInstruction', '');
+  review.addEventListener('change', () => prefs.set('duo.reviewInstruction', review.value.trim()));
 
   const devicesEl = h('div', {}, h('div', { class: 'empty' }, h('span', { class: 'spinner' })));
   const auditEl = h('ul', { class: 'audit' });
   const serverEl = h('dl', { class: 'kv' });
   const standalone = window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone;
+  const names = Object.keys(prefs.get('names', {})).length;
 
   mount(page({
-    tab: 'settings', title: 'Settings',
+    tab: 'settings', title: 'Settings', subtitle: 'Saved on the PC, the same on all your devices',
     body: [
-      standalone ? null : section('Install as an app',
+      h('nav', { class: 'chips settings-nav', 'aria-label': 'Sections' },
+        [['appearance', 'Appearance'], ['personalize', 'Personalize'], ['agents', 'Agents'], ['devices', 'Devices'], ['security', 'Security'], ['server', 'Server']]
+          .map(([id, label]) => h('a', { class: 'chip', href: `#/settings/${id}` }, label))),
+      standalone ? null : section('Install as an app', 'install',
         h('p', { class: 'small' }, 'iPhone: in Safari tap ', h('strong', {}, 'Share → Add to Home Screen'), '. Android: menu ⋮ → ', h('strong', {}, 'Add to Home screen'), '. It opens full screen, like an app.'),
         state.installPrompt ? h('button', { class: 'btn primary full mt12', onclick: async () => {
           await state.installPrompt.prompt();
           state.installPrompt = null;
         } }, 'Install Agent Bridge') : null),
-      section('Defaults for new prompts', h('p', { class: 'muted small' }, 'On this device. You can change them for each prompt with the pills above the text box.'), defaults),
-      section('While waiting', h('label', { class: 'field' }, h('span', {}, 'Activity after sending a prompt'),
-        select('Activity while waiting', [['happydev', 'HappyDEV · 5 games'], ['reels', 'Instagram Reels']], prefs.get('waitingActivity', 'happydev'), (v) => prefs.set('waitingActivity', v))),
+      section('Appearance', 'appearance',
+        field('Theme', segmentedPref('theme', 'auto', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark'], ['black', 'Black']], applyAppearance)),
+        field('Accent colour', swatches),
+        field('Text size', segmentedPref('textSize', 'm', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large'], ['xl', 'Extra large']], applyAppearance)),
+        field('Density', segmentedPref('density', 'comfortable', [['comfortable', 'Comfortable'], ['compact', 'Compact']], applyAppearance)),
+        field('Chat style', segmentedPref('chatStyle', 'bubbles', [['bubbles', 'Bubbles'], ['minimal', 'Minimal']], applyAppearance)),
+        check('showTools', true, 'Show steps (commands, files, output)'), check('showMeta', false, 'Show system context')),
+      section('Personalize', 'personalize',
+        field('Open the app on', segmentedPref('startPage', 'sessions', [['sessions', 'Chats'], ['new', 'New'], ...(state.me.duo ? [['duo', 'Duo']] : []), ['jobs', 'Activity']])),
+        field('Quick prompts', listEditor('quickPrompts', DEFAULT_QUICK_PROMPTS, { placeholder: 'e.g. Run the tests' }), 'Shown above the text box: tap one to insert it.'),
+        check('showQuick', true, 'Show quick prompts above the text box'),
+        state.me.duo ? field('“Ask the other agent” instructions', listEditor('handoffPresets', HANDOFF_PRESETS.map(([t]) => t), { placeholder: 'e.g. Review this', max: 8, maxLength: 400 })) : null,
+        state.me.duo ? field('Duo review instruction', review, 'What the reviewer is asked to do. Leave empty for the default.') : null,
+        names ? h('button', { type: 'button', class: 'btn small ghost mt8', onclick: () => { prefs.set('names', {}); renderSettings('personalize'); } }, `Forget ${names} custom chat name${names === 1 ? '' : 's'}`) : null),
+      section('Defaults for new prompts', 'agents', h('p', { class: 'muted small' }, 'You can change them for each prompt with the pills above the text box.'), defaults),
+      section('While waiting', 'waiting', h('label', { class: 'field' }, h('span', {}, 'Activity after sending a prompt'),
+        select('Activity while waiting', [['happydev', 'HappyDEV · 5 games'], ['reels', 'Instagram Reels'], ['none', 'Nothing, stay in the chat']], prefs.get('waitingActivity', 'happydev'), (v) => prefs.set('waitingActivity', v))),
         h('p', { class: 'muted small' }, 'You can also change this in the panel that appears after sending.')),
-      section('Voice', h('label', { class: 'field' }, h('span', {}, 'Voice note language'),
+      section('Voice', 'voice', h('label', { class: 'field' }, h('span', {}, 'Voice note language'),
         select('Language', [['', 'Automatic'], ['en', 'English'], ['it', 'Italiano'], ['es', 'Español'], ['fr', 'Français'], ['de', 'Deutsch']], prefs.get('voiceLang', ''), (v) => prefs.set('voiceLang', v))),
         h('p', { class: 'muted small' }, voiceInfo)),
-      section('Appearance', h('label', { class: 'field' }, h('span', {}, 'Theme'),
-        select('Theme', [['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']], prefs.get('theme', 'auto'), (v) => { prefs.set('theme', v); applyTheme(); })),
-        check('showTools', true, 'Show steps (commands, files, output)'), check('showMeta', false, 'Show system context')),
-      section('Connected devices', devicesEl,
+      section('Sync', 'sync',
+        check('sync', true, 'Use the same settings on all my devices', (on) => { if (on) syncPrefs().then(() => renderSettings()); }),
+        h('p', { class: 'muted small' }, 'Settings are stored on the PC. Turn this off to keep this device different.')),
+      section('Connected devices', 'devices', devicesEl,
         h('button', { class: 'btn danger full mt12', onclick: async () => {
           if (!confirm('Sign out ALL devices and stop all running jobs?')) return;
           await api('POST', '/api/logout-all', {}).catch(() => {});
           onLoggedOut();
         } }, 'Sign out all and stop jobs'),
         h('button', { class: 'btn ghost full mt8', onclick: async () => { await api('POST', '/api/logout', {}).catch(() => {}); onLoggedOut(); } }, 'Sign out of this device')),
-      section('Security log', h('p', { class: 'muted small' }, 'Recent sign-ins and prompts (prompt text is not stored).'), auditEl),
-      section('Server', h('p', { class: 'muted small' }, 'Read-only. For security, these settings can only be changed on the PC.'), serverEl),
+      section('Security log', 'security', h('p', { class: 'muted small' }, 'Recent sign-ins and prompts (prompt text is not stored).'), auditEl),
+      section('Server', 'server', h('p', { class: 'muted small' }, 'Read-only. For security, these settings can only be changed on the PC.'), serverEl),
     ],
   }));
+  if (sub) requestAnimationFrame(() => document.getElementById(sub)?.scrollIntoView({ block: 'start' }));
 
   const loadDevices = async () => {
     const { devices } = await api('GET', '/api/devices');
     fill(devicesEl, devices.map((d) => h('div', { class: 'device' },
+      h('span', { class: 'device-ic' }, icon('screen', 'sm')),
       h('div', { class: 'grow' },
         h('div', { class: 't' }, describeUa(d.ua), d.current ? h('span', { class: 'tag status-done ml6' }, 'this device') : null),
         h('div', { class: 'muted small' }, `active ${ago(d.lastSeen)} · ${d.from || '?'}`)),
@@ -1176,7 +1627,7 @@ async function renderSettings() {
     fill(serverEl, [
       ['PC', i.host], ['Folders', i.workspaces.map(shortPath).join(', ')], ['Remote address', i.allowedOrigins.join(', ') || '—'],
       ['Sign-in expiry', `${i.sessionIdleMinutes} min idle · max ${i.sessionMaxHours} h`], ['Dangerous modes', i.allowDangerousModes ? '⚠ on' : 'off'],
-      ['Job', `max ${i.maxConcurrentJobs} at once · timeout ${i.jobTimeoutMinutes} min`], ['Claude Code', i.versions.claude || '—'], ['Codex', i.versions.codex || '—'],
+      ['Jobs', `max ${i.maxConcurrentJobs} at once · timeout ${i.jobTimeoutMinutes} min`], ['Claude Code', i.versions.claude || '—'], ['Codex', i.versions.codex || '—'],
       ['Local voice', i.voice ? 'Whisper installed' : 'not installed'], ['Configuration', shortPath(i.configPath)],
     ].flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]));
   };
@@ -1189,12 +1640,15 @@ function route() {
   if (!state.csrf) return;
   const hash = location.hash || '#/';
   state.route = hash;
+  viewSeq++;
   let m;
   if ((m = hash.match(/^#\/s\/(claude|codex)\/([0-9a-f-]{36})$/i))) return renderSession(m[1], m[2]);
   if ((m = hash.match(/^#\/j\/([0-9a-f-]{36})$/))) return renderJob(m[1]);
+  if ((m = hash.match(/^#\/d\/([0-9a-f-]{36})$/))) return renderDuo(m[1]);
+  if (hash === '#/duo') return renderDuoNew();
+  if (hash.startsWith('#/settings')) return renderSettings(hash.split('/')[2] || '');
   if (hash === '#/new') return renderNew();
   if (hash === '#/jobs') return renderJobs();
-  if (hash === '#/settings') return renderSettings();
   return renderSessions();
 }
 
@@ -1208,7 +1662,12 @@ async function boot() {
     else if (!hadSession) renderLogin();
     return;
   }
+  await syncPrefs();
+  applyAppearance();
   connectWs();
+  if (!hadSession && (location.hash || '#/') === '#/' && prefs.get('startPage', 'sessions') !== 'sessions') {
+    history.replaceState(null, '', { new: '#/new', duo: '#/duo', jobs: '#/jobs' }[prefs.get('startPage')] || '#/');
+  }
   route();
 }
 

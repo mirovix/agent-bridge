@@ -16,9 +16,13 @@ let port = 8765;
 let lastJob = null;
 const cfg = (key) => vscode.workspace.getConfiguration('agentBridge').get(key);
 
+// Windows and macOS paths are case-insensitive (VS Code reports c:\ where the server says C:\).
+const norm = (p) => (process.platform === 'win32' || process.platform === 'darwin' ? String(p || '').toLowerCase() : String(p || ''));
+
 function ownsFolder(job) {
-  const folders = (vscode.workspace.workspaceFolders || []).map((folder) => folder.uri.fsPath);
-  return folders.some((folder) => job.cwd === folder || String(job.cwd || '').startsWith(folder + path.sep));
+  const folders = (vscode.workspace.workspaceFolders || []).map((folder) => norm(folder.uri.fsPath));
+  const cwd = norm(job.cwd);
+  return folders.some((folder) => cwd === folder || cwd.startsWith(folder + path.sep));
 }
 
 async function openInChat(job) {
@@ -71,7 +75,15 @@ function scheduleReconnect(delay = 5000) {
 
 function connect() {
   if (disposed) return;
-  request?.destroy();
+  clearTimeout(retryTimer);
+  if (request) {
+    // The old request's own 'error'/'end' would schedule yet another reconnect.
+    const old = request;
+    request = null;
+    old.removeAllListeners();
+    old.on('error', () => {});
+    old.destroy();
+  }
   let token;
   try {
     const saved = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
@@ -81,7 +93,8 @@ function connect() {
     setStatus(false, 'server not started yet');
     return scheduleReconnect(10_000);
   }
-  request = http.get({ host: '127.0.0.1', port, path: '/local/events', headers: { Authorization: `Bearer ${token}`, Host: `127.0.0.1:${port}` } }, (response) => {
+  const current = http.get({ host: '127.0.0.1', port, path: '/local/events', headers: { Authorization: `Bearer ${token}`, Host: `127.0.0.1:${port}` } }, (response) => {
+    if (request !== current) return response.destroy();
     if (response.statusCode !== 200) {
       setStatus(false, `response ${response.statusCode}`);
       response.resume();
@@ -110,10 +123,11 @@ function connect() {
         else if (event === 'hello' && message.running?.length) lastJob = message.running.at(-1);
       }
     });
-    response.on('end', () => { setStatus(false, 'connection closed'); scheduleReconnect(); });
-    response.on('error', () => { setStatus(false, 'connection lost'); scheduleReconnect(); });
+    response.on('end', () => { if (request !== current) return; setStatus(false, 'connection closed'); scheduleReconnect(); });
+    response.on('error', () => { if (request !== current) return; setStatus(false, 'connection lost'); scheduleReconnect(); });
   });
-  request.on('error', () => { setStatus(false, 'server offline'); scheduleReconnect(); });
+  request = current;
+  current.on('error', () => { if (request !== current) return; setStatus(false, 'server offline'); scheduleReconnect(); });
 }
 
 function activate(context) {

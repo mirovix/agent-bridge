@@ -1,7 +1,7 @@
 // Delivery of prompts into a *live* Claude Code session (the one open in VS Code),
 // instead of spawning a separate headless process that would branch the transcript.
 //
-// /telefono arms a working directory (the session id is unknown at that point);
+// /phone arms a working directory (the session id is unknown at that point);
 // the Stop hook (scripts/hooks/stop.js) picks the arm up, parks at the end of the
 // turn and polls the inbox, which the server writes to. Both sides only ever touch
 // files inside the data dir (~/.agent-bridge, mode 0700), so nothing is reachable from the network.
@@ -10,14 +10,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, replaceFile } from './config.js';
 
-const ARMED_DIR = path.join(DATA_DIR, 'armed'); // keyed by cwd, written by /telefono
+const ARMED_DIR = path.join(DATA_DIR, 'armed'); // keyed by cwd, written by /phone
 const LIVE_DIR = path.join(DATA_DIR, 'live'); // keyed by session id, written by the parked hook
 const INBOX_DIR = path.join(DATA_DIR, 'inbox'); // keyed by session id, written by the server
 // A parked hook refreshes its heartbeat every 5 s; allow three misses.
 const HEARTBEAT_STALE_MS = 16 * 1000;
 const UUID = /^[0-9a-f-]{36}$/i;
+// A prompt that nobody picked up in this time is dropped instead of surfacing much later.
+export const INBOX_TTL_MS = 30 * 1000;
 
-// Windows paths are case-insensitive (the hook may report c:\\ where /telefono saw C:\\).
+// Windows paths are case-insensitive (the hook may report c:\\ where /phone saw C:\\).
 const normCwd = (cwd) => (process.platform === 'win32' ? path.resolve(cwd).toLowerCase() : path.resolve(cwd));
 const key = (cwd) => crypto.createHash('sha256').update(normCwd(cwd)).digest('hex').slice(0, 32);
 const armedPath = (cwd) => path.join(ARMED_DIR, `${key(cwd)}.json`);
@@ -35,7 +37,7 @@ function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
-// ---------- /telefono side ----------
+// ---------- /phone side ----------
 
 /** Arm (or, with minutes = 0, disarm) the chat running in `cwd`. */
 export function setArmed(cwd, minutes) {
@@ -74,7 +76,7 @@ export function takeInbox(sessionId) {
   const msg = readJson(file);
   if (!msg) return null;
   fs.rmSync(file, { force: true });
-  return msg;
+  return Date.now() - (msg.ts || 0) > INBOX_TTL_MS ? null : msg;
 }
 
 // ---------- server side ----------
@@ -100,7 +102,8 @@ export const isLive = (sessionId) => listLive().some((r) => r.sessionId === sess
 /** Hand a prompt to the parked session. Throws if it is not listening. */
 export function deliver(sessionId, prompt) {
   if (!isLive(sessionId)) throw new Error('The VS Code chat is no longer listening');
-  if (fs.existsSync(inboxPath(sessionId))) throw new Error('Another prompt is already being delivered');
+  const pending = readJson(inboxPath(sessionId));
+  if (pending && Date.now() - (pending.ts || 0) <= INBOX_TTL_MS) throw new Error('Another prompt is already being delivered');
   const msg = { id: crypto.randomUUID(), prompt, ts: Date.now() };
   writeJson(inboxPath(sessionId), msg);
   return msg;

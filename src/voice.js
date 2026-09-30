@@ -107,8 +107,12 @@ export class Voice {
       });
     } finally {
       fs.rmSync(file, { force: true });
-      this.idleTimer = setTimeout(() => this.stop(), IDLE_MS);
-      this.idleTimer.unref();
+      // Only the last transcription arms the idle shutdown, never one still running.
+      clearTimeout(this.idleTimer);
+      if (!this.pending.size) {
+        this.idleTimer = setTimeout(() => this.stop(), IDLE_MS);
+        this.idleTimer.unref();
+      }
     }
   }
 }

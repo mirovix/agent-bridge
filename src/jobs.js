@@ -39,6 +39,7 @@ const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 const CODEX_LOCKED = /already has an active writer|thread[- ]store conflict|session (?:is )?locked by another|already being used by another codex/i;
 
 const MAX_EVENTS = 3000;
+const NESTING_VARS = new Set(['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_EXECPATH']);
 const clip = (s, n = 3000) => (typeof s === 'string' && s.length > n ? `${s.slice(0, n)}…` : s ?? '');
 
 const CODEX_HOME = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
@@ -239,7 +240,7 @@ class Job extends EventEmitter {
 
   summary() {
     const { id, agent, sessionId, resumeOf, fork, cwd, mode, model, effort, status, started, ended, exitCode, transport } = this;
-    return { id, agent, sessionId: sessionId || null, resumeOf, fork: !!fork, model: model || null, effort: effort || null, images: this.imageCount || 0, cwd, mode, transport: transport || 'cli', status, started, ended, exitCode, promptPreview: this.prompt.slice(0, 120) };
+    return { id, agent, sessionId: sessionId || null, resumeOf, fork: !!fork, model: model || null, effort: effort || null, images: this.imageCount || 0, cwd, mode, transport: transport || 'cli', status, started, ended, exitCode, duo: this.duo || null, promptPreview: this.prompt.slice(0, 120) };
   }
 }
 
@@ -248,6 +249,10 @@ export class JobManager extends EventEmitter {
     super();
     this.cfg = cfg;
     this.jobs = new Map();
+  }
+
+  agents() {
+    return agentList(this.cfg);
   }
 
   running() {
@@ -311,8 +316,10 @@ export class JobManager extends EventEmitter {
     const env = { ...process.env };
     // Don't leak our own settings, and don't let agents think they run nested inside
     // the Claude Code / VS Code session that may have started this server.
+    // Only the nesting markers go: user settings such as CLAUDE_CODE_USE_BEDROCK or
+    // CLAUDE_CODE_GIT_BASH_PATH (needed on Windows) must reach the agent.
     for (const k of Object.keys(env)) {
-      if (k.startsWith('AGENT_BRIDGE') || k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_')) delete env[k];
+      if (k.startsWith('AGENT_BRIDGE') || NESTING_VARS.has(k)) delete env[k];
     }
     // Marks the agent as "started by Agent Bridge": the Stop hook must never park
     // one of these, or a prompt from the app would wait for a prompt from the app.
@@ -372,6 +379,7 @@ export class JobManager extends EventEmitter {
         child = spawnCommand(spec.command, spec.args, { cwd, env, shell: false, ...treeSpawnOptions(), stdio: ['pipe', 'pipe', 'pipe'] }, { allowBatch: spec.stdin != null });
       } catch (e) {
         clearTimeout(timeout);
+        if (imageDir) fs.rmSync(imageDir, { recursive: true, force: true });
         job.status = 'failed';
         job.ended = Date.now();
         job.push([{ role: 'error', text: `Failed to start: ${e.message}` }]);
@@ -404,7 +412,8 @@ export class JobManager extends EventEmitter {
         audit('codex_locked_retry', { job: job.id, sessionId, attempt: codexLockRetries });
         job.emit('update', job.summary());
         setTimeout(() => {
-          if (job.status === 'running') launch();
+          // Stopped or timed out while waiting: there is no process left, so finish here.
+          if (job.status === 'running') launch(); else onClose(code, 'SIGTERM');
         }, codexLockRetryMs).unref();
         return;
       }
@@ -453,6 +462,7 @@ export class JobManager extends EventEmitter {
       cwd: job.cwd,
       model: job.model,
       effort: job.effort,
+      mode: job.mode,
       imagePaths,
     });
     job.controller = turn;
@@ -467,6 +477,7 @@ export class JobManager extends EventEmitter {
       this.kill(job, 'timeout');
     }, this.cfg.jobTimeoutMinutes * 60 * 1000);
     turn.start().catch((error) => {
+      if (turn.finished) return; // already cancelled: a late error means nothing
       let message = error?.message || String(error);
       if (CODEX_LOCKED.test(message)) {
         message = 'Visual Studio Code is still using the old connection. Reload the VS Code window once: then phone and PC will share the same chat.';

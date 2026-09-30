@@ -1,4 +1,4 @@
-// Delivery of a prompt into a live Claude Code chat (the /telefono path).
+// Delivery of a prompt into a live Claude Code chat (the /phone path).
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -41,7 +41,7 @@ test('agents started by the app never park (no feedback loop)', async () => {
   setArmed(CWD, 0);
 });
 
-test('/telefono arms a directory and expires on its own', () => {
+test('/phone arms a directory and expires on its own', () => {
   assert.equal(getArmed(CWD), null);
   setArmed(CWD, 60);
   assert.ok(getArmed(CWD).armedUntil > Date.now());

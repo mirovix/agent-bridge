@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v1.4.0 to build every client and publish a GitHub Release.
+# Push a tag like v1.5.0 to build every client and publish a GitHub Release.
 on:
   push:
     tags: ['v*']
@@ -26,7 +26,10 @@ jobs:
           [ "$GITHUB_REF_TYPE" = tag ] || VERSION="$(node -p "require('./package.json').version")"
           NAME="agent-bridge-server-$VERSION"
           mkdir -p "dist/$NAME"
-          cp -r src public scripts package.json package-lock.json README.md LICENSE "dist/$NAME/"
+          cp -r src public scripts docs examples package.json package-lock.json README.md LICENSE "dist/$NAME/"
+          # The web app serves the HappyDEV games from the Android assets folder.
+          mkdir -p "dist/$NAME/android/app/src/main/assets"
+          cp -r android/app/src/main/assets/happydev "dist/$NAME/android/app/src/main/assets/"
           rm -rf "dist/$NAME/scripts/__pycache__"
           (cd dist && zip -qr "$NAME.zip" "$NAME" && tar -czf "$NAME.tar.gz" "$NAME")
       - uses: actions/upload-artifact@v4

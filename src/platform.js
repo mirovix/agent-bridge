@@ -22,7 +22,9 @@ export function which(command, { env = process.env, platform = process.platform 
     ? (env.PATHEXT || env.Pathext || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
     : [''];
   const hasExt = win && exts.some((e) => command.toLowerCase().endsWith(e.toLowerCase()));
-  const candidates = (base) => (win ? (hasExt ? [base] : [base, ...exts.map((e) => base + e)]) : [base]);
+  // npm puts an extensionless shell script next to claude.cmd / codex.cmd: Windows
+  // cannot run it, so a bare name only ever matches with one of the PATHEXT extensions.
+  const candidates = (base) => (win ? (hasExt ? [base] : exts.map((e) => base + e)) : [base]);
   const isFile = (f) => {
     try {
       const st = fs.statSync(f);

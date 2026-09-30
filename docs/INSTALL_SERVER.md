@@ -108,7 +108,7 @@ code --install-extension agent-bridge-companion-<version>.vsix --force
 - **Codex**: set `chatgpt.cliExecutable` to the bridge path the extension shows,
   then reload the VS Code window once. VS Code and Agent Bridge then share one
   Codex daemon, so phone prompts continue the same thread.
-- **Claude Code**: run `npm run hook:install`, then type `/telefono` in the Claude
+- **Claude Code**: run `npm run hook:install`, then type `/phone` in the Claude
   conversation that should receive phone prompts.
 
 ## Voice notes (optional)

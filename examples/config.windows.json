@@ -1,0 +1,14 @@
+{
+  "host": "127.0.0.1",
+  "port": 8765,
+  "allowedOrigins": ["https://my-laptop.tail1234.ts.net"],
+  "workspaces": ["C:\\Users\\me\\source\\repos", "D:\\work"],
+  "allowDangerousModes": false,
+  "maxConcurrentJobs": 2,
+  "codexSharedDaemon": false,
+  "agents": {
+    "claude": { "enabled": true, "command": "claude" },
+    "codex": { "enabled": true, "command": "codex" },
+    "custom": []
+  }
+}

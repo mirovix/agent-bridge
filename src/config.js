@@ -82,7 +82,8 @@ export function loadConfig() {
   checkPrivate(CONFIG_PATH);
   const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
   const cfg = { ...DEFAULT_CONFIG, ...raw, agents: { ...DEFAULT_CONFIG.agents, ...(raw.agents || {}) } };
-  cfg.workspaces = cfg.workspaces.map((w) => path.resolve(w));
+  // `~` is the home folder, as in the examples and in what setup asks for.
+  cfg.workspaces = cfg.workspaces.map((w) => path.resolve(String(w).replace(/^~(?=$|[\\/])/, os.homedir())));
   cfg.allowedOrigins = cfg.allowedOrigins.map((o) => new URL(o).origin);
   if (!['127.0.0.1', '::1', 'localhost'].includes(cfg.host)) {
     throw new Error(`Refusing to listen on ${cfg.host}: bind to 127.0.0.1 and use Tailscale Serve for remote access.`);

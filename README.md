@@ -2,82 +2,80 @@
 
 <h1 align="center">Agent Bridge</h1>
 
-<p align="center">Use Codex, Claude Code and other coding agents running on your computer from your phone or any other device.<br>
-Server: Linux · macOS · Windows. Clients: web, iPhone, Android, VS Code.</p>
+<p align="center">One web app to drive <b>Claude Code</b> and <b>Codex</b> on your computer, from your phone, tablet or any browser.<br>
+They can also work together: one writes the code, the other reviews it.</p>
 
 <p align="center"><a href="https://github.com/mirovix/agent-bridge/releases/latest"><b>Download the latest release</b></a></p>
 
-![Agent Bridge on desktop, with demo data](docs/images/agent-bridge-desktop.png)
+![Codex and Claude working on the same task](docs/images/agent-bridge-desktop.png)
 
-Agent Bridge is a small server that runs next to your agents. You reach it privately through Tailscale, sign in with a password and 2FA, and keep working in the **same** conversation you started in VS Code. Agents, credentials and transcripts never leave your computer.
+Agent Bridge is a small server that runs next to your agents. You reach it privately
+through [Tailscale](https://tailscale.com), sign in with a password and a 2FA code, and
+keep working in the **same** conversations you use in VS Code. Code, credentials and
+transcripts never leave your computer.
 
-## Download
+## What you can do
 
-Everything is on the **[Releases page](https://github.com/mirovix/agent-bridge/releases/latest)**.
+- **Chat** with Claude Code or Codex in any project folder, with live replies, steps, photos and voice notes.
+- **Duo**: give one task to both agents.
+  - **Review**: Codex (or Claude) does the task, the other reviews the exact diff without touching files, then the first one applies the fixes.
+  - **Compare**: both answer the same question side by side, read-only.
+- **Ask the other agent**: in any chat, tap **Ask Codex** / **Ask Claude** to pass the latest reply across ("review it", "write tests", …).
+- **Make it yours**: theme (light, dark, black), accent colour, text size, density, chat style, quick prompts, start page, chat names and pins. Settings are saved on the PC, so every device looks the same.
+- **Stay safe**: password + 2FA, per-device sign-out, audit log, folder allowlist, dangerous modes off by default.
 
-| Part | File | Runs on |
-| --- | --- | --- |
-| Server | `agent-bridge-server-<version>.zip` (or `.tar.gz`) | Linux, macOS, Windows, with Node.js 20+ |
-| Android app | `AgentBridge-<version>-android.apk` | Android 8 and newer |
-| iPhone / iPad app | `AgentBridge-<version>-ios-unsigned.ipa` | iOS 16 and newer, installed with a sideloading tool (or build it with Xcode) |
-| VS Code companion | `agent-bridge-companion-<version>.vsix` | VS Code 1.80+ |
-| Web app | nothing to download | any browser: open your server's address, then **Add to Home Screen** |
+## Set up in 5 minutes
 
-`SHA256SUMS.txt` lists the checksums of every file.
+### 1. Your computer (Linux, macOS or Windows)
 
-## Quick start
+You need [Node.js 20+](https://nodejs.org), [Tailscale](https://tailscale.com/download), and Claude Code and/or Codex already signed in.
 
-**1. On the computer with your agents** (Terminal, or PowerShell on Windows). You need Node.js 20+, [Tailscale](https://tailscale.com/download), and Codex CLI or Claude Code signed in. Download and extract the server, then run:
+1. Download `agent-bridge-server-<version>.zip` from [Releases](https://github.com/mirovix/agent-bridge/releases/latest) and extract it.
+2. In that folder, open a terminal (PowerShell on Windows) and run:
+   ```bash
+   npm ci
+   npm run setup             # folders, password, 2FA (scan the QR code)
+   npm run service:install   # starts by itself at every login
+   tailscale serve --bg 8765
+   tailscale serve status    # shows your private https://…ts.net address
+   ```
+3. Put that address in `allowedOrigins` in `~/.agent-bridge/config.json` ([example](examples/config.basic.json)) and restart: `npm run service:install`.
 
-```bash
-npm ci
-npm run setup            # folders, password, 2FA
-npm run service:install  # start automatically (systemd / launchd / Task Scheduler)
-tailscale serve --bg 8765
-tailscale serve status   # shows your private https://…ts.net address
-```
+Test it on the computer itself: open `http://127.0.0.1:8765`.
+More detail: [server guide](docs/INSTALL_SERVER.md).
 
-Add that address to `allowedOrigins` in `~/.agent-bridge/config.json` and restart the service.
+### 2. iPhone or iPad
 
-**2. On your phone**, install Tailscale and the Agent Bridge app (or just open the address in the browser), enter the address, then your password and 2FA code.
+1. Install **Tailscale** from the App Store and sign in with the same account.
+2. Open your `https://…ts.net` address in **Safari** and sign in.
+3. Tap **Share → Add to Home Screen**. It now opens full screen, like an app.
 
-Full guides: **[Server (Linux, macOS, Windows)](docs/INSTALL_SERVER.md)** · **[Android](docs/INSTALL_ANDROID.md)** · **[iPhone and iPad](docs/INSTALL_IOS.md)**
+Prefer a native app? See the [iPhone guide](docs/INSTALL_IOS.md).
 
-## Features
+### 3. Android
 
-- Continues the same Codex or Claude conversation you use in VS Code.
-- Streams replies and running jobs live.
-- Sends text, screenshots, photos and voice notes. Voice is transcribed on your computer with Whisper, and the language is detected automatically.
-- Lets you pick the model, the reasoning level and the permission mode for each prompt.
-- Something to do while you wait: HappyDEV mini-games or Reels, closed automatically when the agent finishes.
-- Security: password, 2FA with recovery codes, CSRF protection, a lockout after failed attempts, an audit log, and access only through your tailnet.
+1. Install **Tailscale** from Google Play and sign in with the same account.
+2. Open your `https://…ts.net` address in **Chrome** and sign in.
+3. Tap **⋮ → Add to Home screen** (or **Install app**).
+
+Prefer the APK? Download `AgentBridge-<version>-android.apk` from Releases, or see the [Android guide](docs/INSTALL_ANDROID.md).
 
 <p align="center">
-  <img src="docs/images/agent-bridge-mobile.png" width="390" alt="Agent Bridge on a phone, with demo data">
+  <img src="docs/images/agent-bridge-mobile.png" width="340" alt="A duo on a phone">
 </p>
 
 ## Keep one conversation with VS Code
 
-- **Codex**: install the `.vsix` companion (`code --install-extension agent-bridge-companion-<version>.vsix`) and set `chatgpt.cliExecutable` to the path it shows. VS Code and Agent Bridge then share one Codex app-server, so a phone prompt becomes the next turn of the same thread.
-- **Claude Code**: run `npm run hook:install`, then type `/telefono` in the conversation that should receive phone prompts.
+- **Codex**: install the `.vsix` companion from Releases (`code --install-extension agent-bridge-companion-<version>.vsix`). VS Code and the app then share one Codex app-server, so a phone prompt is the next turn of the same chat.
+- **Claude Code**: run `npm run hook:install`, then type `/phone` in the chat that should receive prompts from the app.
+
+## Examples
+
+[`examples/`](examples) has ready-made configurations (basic, Windows, extra agents such as Gemini CLI, Aider and Ollama) and prompts that work well from the phone.
 
 ## Security
 
-Anyone who can reach Agent Bridge and sign in can run agent commands on your computer. Keep the server bound to `127.0.0.1`, reach it only through **Tailscale Serve** (never Funnel), use a long password with 2FA, and leave the dangerous permission modes off unless you need them.
-
-## Repository layout
-
-```text
-src/               server and agent integration (Node.js)
-public/            web app / installable PWA (no build step)
-ios/               native SwiftUI app
-android/           native Android app
-vscode-extension/  VS Code companion
-scripts/           setup, autostart for each OS, hooks, emulator launchers
-test/              server, security, session and job tests
-```
-
-See [Architecture](docs/ARCHITECTURE.md) for the data flow and security boundaries.
+Anyone who can reach Agent Bridge and sign in can run agent commands on your computer. Keep the server on `127.0.0.1`, reach it only through **Tailscale Serve** (never Funnel), use a long password with 2FA, and leave the dangerous permission modes off. Duo reviewers always run read-only.
 
 ## Development
 
@@ -85,17 +83,18 @@ See [Architecture](docs/ARCHITECTURE.md) for the data flow and security boundari
 git clone https://github.com/mirovix/agent-bridge.git
 cd agent-bridge
 npm ci
-npm test
+npm test                      # unit, integration and UI tests (UI needs Chrome)
+AB_REAL_AGENTS=1 npm test     # also runs real Claude Code and Codex, signed in as you
 npm start
 ```
 
-CI runs the tests on Linux, macOS and Windows. To publish a release, bump the versions and push a tag:
+| Tests | What they cover |
+| --- | --- |
+| `server`, `security`, `jobs`, `platform`, … | API, login and 2FA, CSRF, folder limits, spawning on every OS |
+| `duo` | Claude and Codex together through a real server with fake CLIs |
+| `ui` | every screen and button of the web app in headless Chrome |
+| `real-agents` | the real CLIs end to end (opt-in) |
 
-```bash
-git tag v1.4.0
-git push origin v1.4.0
-```
-
-The [Release workflow](.github/workflows/release.yml) builds the server package, the Android APK, the unsigned iPhone IPA and the VS Code companion, then publishes them together.
+CI runs everything on Linux, macOS and Windows. To publish a release, bump the version and push a tag (`git tag v1.5.0 && git push origin v1.5.0`): the [Release workflow](.github/workflows/release.yml) builds the server package, the Android APK, the iPhone IPA and the VS Code companion.
 
 MIT licensed.

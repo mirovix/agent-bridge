@@ -1,5 +1,14 @@
 # Android installation
 
+## Quickest: the web app (nothing to install)
+
+1. Install **Tailscale** from Google Play and sign in with the same account as your computer.
+2. Open the `https://…ts.net` address that `tailscale serve status` prints on the computer, in **Chrome**.
+3. Sign in with your password and 2FA code, then tap **⋮ → Add to Home screen** (or **Install app**).
+
+It opens full screen like an app, and updates by itself whenever the server is updated.
+The native app below is optional.
+
 The native Android client supports Android 8 (API 26) and newer.
 
 ## Install the APK

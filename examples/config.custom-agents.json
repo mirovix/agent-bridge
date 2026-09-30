@@ -1,0 +1,15 @@
+{
+  "host": "127.0.0.1",
+  "port": 8765,
+  "allowedOrigins": ["https://my-pc.tail1234.ts.net"],
+  "workspaces": ["~/projects"],
+  "agents": {
+    "claude": { "enabled": true, "command": "claude" },
+    "codex": { "enabled": true, "command": "codex" },
+    "custom": [
+      { "id": "gemini", "name": "Gemini CLI", "command": "gemini", "args": ["-p", "{prompt}"] },
+      { "id": "aider", "name": "Aider", "command": "aider", "args": ["--yes-always", "--no-pretty", "--message", "{prompt}"] },
+      { "id": "ollama", "name": "Ollama (llama3.2)", "command": "ollama", "args": ["run", "llama3.2"] }
+    ]
+  }
+}

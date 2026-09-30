@@ -2,7 +2,7 @@
   "name": "agent-bridge-companion",
   "displayName": "Agent Bridge \u2014 live prompts from your phone",
   "description": "Connects prompts sent from your phone to the same Claude Code / Codex chat, without opening terminals.",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "agent-bridge",
   "license": "MIT",
   "engines": {

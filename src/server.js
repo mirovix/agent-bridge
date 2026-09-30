@@ -8,8 +8,10 @@ import { WebSocketServer } from 'ws';
 import { SessionStore, audit, lockStatus, verifyLogin } from './auth.js';
 import { AUDIT_PATH, CONFIG_PATH, DATA_DIR, loadConfig, loadSecrets, resolveWorkspaceDir, writePrivateJson } from './config.js';
 import { forgetConversation, getConversation, setConversation } from './conversations.js';
+import { DuoManager, cleanInstruction, handoffPrompt, jobReply, lastReply } from './duo.js';
 import { JobManager, agentList } from './jobs.js';
 import { deliver, listLive } from './live.js';
+import { loadPrefs, savePrefs } from './prefs.js';
 import { findSession, listSessions, readSession, tailSession } from './transcripts.js';
 import { IS_WINDOWS, samePath, serviceStatusHint, spawnCommand } from './platform.js';
 import { MAX_AUDIO_BYTES, Voice } from './voice.js';
@@ -53,16 +55,37 @@ function rememberJobConversation(job) {
   job.on('update', remember);
 }
 
+// Every job started from the app: remembered as the project's chat (unless it is a
+// one-off like a reviewer) and pushed live to every open tab.
+function trackJob(job, { remember = true } = {}) {
+  if (remember) rememberJobConversation(job);
+  broadcastJobs();
+  job.on('update', broadcastJobs);
+}
+
+const duos = new DuoManager(jobs, {
+  conversation: (agent, cwd) => canonicalConversation(agent, cwd)?.id || null,
+  started: trackJob,
+});
+duos.on('update', () => broadcast({ type: 'duos', duos: duos.list() }));
+
+const bothAgents = () => !!(cfg.agents.claude?.enabled && cfg.agents.codex?.enabled);
+const agentOptions = (o) => ({
+  model: typeof o?.model === 'string' ? o.model : undefined,
+  effort: typeof o?.effort === 'string' ? o.effort : undefined,
+  mode: typeof o?.mode === 'string' ? o.mode : undefined,
+});
+
 // ---------- local mirror channel (VS Code companion extension) ----------
 // Read-only live feed of jobs for programs running on this PC as this user. Auth is a
 // random token in a 0600 file; anything that came through Tailscale Serve is refused.
 const LOCAL_TOKEN_PATH = path.join(DATA_DIR, 'local-token.json');
-let localToken;
-try { localToken = JSON.parse(fs.readFileSync(LOCAL_TOKEN_PATH, 'utf8')).token; } catch { /* create below */ }
-if (typeof localToken !== 'string' || localToken.length < 40) {
-  localToken = crypto.randomBytes(32).toString('base64url');
-  writePrivateJson(LOCAL_TOKEN_PATH, { token: localToken, port: cfg.port });
-}
+let saved = {};
+try { saved = JSON.parse(fs.readFileSync(LOCAL_TOKEN_PATH, 'utf8')) || {}; } catch { /* created below */ }
+let localToken = saved.token;
+if (typeof localToken !== 'string' || localToken.length < 40) localToken = crypto.randomBytes(32).toString('base64url');
+// Rewritten when the port changes too, or the VS Code companion keeps knocking on the old one.
+if (localToken !== saved.token || saved.port !== cfg.port) writePrivateJson(LOCAL_TOKEN_PATH, { token: localToken, port: cfg.port });
 const localClients = new Set();
 
 function localAuthorized(req) {
@@ -309,6 +332,7 @@ async function api(req, res, url) {
     return send(res, 200, { ok: true }, { 'Set-Cookie': `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0` });
   }
   if (route === 'POST /api/logout-all') {
+    duos.cancelAll();
     jobs.killAll();
     sessions.revokeAll();
     audit('logout_all', meta);
@@ -318,8 +342,15 @@ async function api(req, res, url) {
     return send(res, 200, {
       csrf: s.csrf, agents: agentList(cfg), workspaces: workspaceChoices(), host: os.hostname(),
       idleMinutes: cfg.sessionIdleMinutes, expiresAt: s.created + cfg.sessionMaxHours * 3600 * 1000, maxPromptChars: cfg.maxPromptChars,
-      voice: voice.available(),
+      voice: voice.available(), duo: bothAgents(),
     });
+  }
+  if (route === 'GET /api/prefs') return send(res, 200, { prefs: loadPrefs() });
+  if (route === 'PUT /api/prefs') {
+    const b = await readJson(req, 40 * 1024);
+    savePrefs(b.prefs);
+    broadcast({ type: 'prefs', prefs: b.prefs });
+    return send(res, 200, { ok: true });
   }
   if (route === 'GET /api/server-info') {
     return send(res, 200, {
@@ -375,7 +406,7 @@ async function api(req, res, url) {
   m = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})$/);
   if (m && req.method === 'GET') {
     const j = jobs.get(m[1]);
-    return j ? send(res, 200, { job: j.summary(), events: j.events }) : send(res, 404, { error: 'Job not found' });
+    return j ? send(res, 200, { job: j.summary(), prompt: j.prompt, events: j.events }) : send(res, 404, { error: 'Job not found' });
   }
   m = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})\/cancel$/);
   if (m && req.method === 'POST') {
@@ -415,13 +446,77 @@ async function api(req, res, url) {
     }
     try {
       const job = jobs.start({ agent: b.agent, sessionId, fork: !!b.fork, cwd, mode: b.mode, model: b.model, effort: b.effort, prompt, images: b.images }, meta);
-      rememberJobConversation(job);
-      broadcastJobs();
-      job.on('update', broadcastJobs);
+      trackJob(job);
       return send(res, 200, { job: job.summary() });
     } catch (e) {
       return send(res, 400, { error: e.message });
     }
+  }
+
+  // ---------- Claude + Codex together ----------
+  if (route === 'POST /api/handoff') {
+    const b = await readJson(req);
+    if (!['claude', 'codex'].includes(b.to) || !agentList(cfg).some((a) => a.id === b.to)) return send(res, 400, { error: 'Agent not available' });
+    let reply;
+    let cwd;
+    let from;
+    if (typeof b.jobId === 'string') {
+      const j = jobs.get(b.jobId);
+      if (!j) return send(res, 404, { error: 'Job not found' });
+      reply = jobReply(j.events);
+      cwd = resolveWorkspaceDir(cfg, j.cwd);
+      from = j.agent;
+    } else {
+      const info = findSession(b.from, b.sessionId);
+      if (!info) return send(res, 404, { error: 'Session not found' });
+      reply = lastReply(readSession(info).messages);
+      cwd = info.cwd && resolveWorkspaceDir(cfg, info.cwd);
+      from = info.agent;
+    }
+    if (!cwd) return send(res, 403, { error: 'Working folder is outside the allowed workspaces' });
+    if (!reply) return send(res, 400, { error: 'There is no reply to pass on yet' });
+    try {
+      const instruction = cleanInstruction(b.instruction, 'Review this and tell me what you would change.');
+      const prompt = handoffPrompt({ from, reply, instruction }).slice(0, cfg.maxPromptChars);
+      const existing = canonicalConversation(b.to, cwd);
+      const job = jobs.start({ agent: b.to, sessionId: existing?.id || null, cwd, ...agentOptions(b.options), prompt }, meta);
+      job.handoff = { from };
+      trackJob(job);
+      audit('handoff', { job: job.id, from, to: b.to, ...meta });
+      return send(res, 200, { job: job.summary() });
+    } catch (e) {
+      return send(res, 400, { error: e.message });
+    }
+  }
+  if (route === 'GET /api/duos') return send(res, 200, { duos: duos.list() });
+  if (route === 'POST /api/duos') {
+    const b = await readJson(req);
+    const prompt = typeof b.prompt === 'string' ? b.prompt.trim() : '';
+    if (!prompt) return send(res, 400, { error: 'Empty prompt' });
+    if (prompt.length > cfg.maxPromptChars) return send(res, 400, { error: 'Prompt too long' });
+    const cwd = resolveWorkspaceDir(cfg, b.cwd);
+    if (!cwd) return send(res, 403, { error: 'Working folder is outside the allowed workspaces' });
+    try {
+      const options = { claude: agentOptions(b.options?.claude), codex: agentOptions(b.options?.codex) };
+      const duo = duos.start({ kind: b.kind, cwd, prompt, lead: b.lead, apply: b.apply, options, reviewInstruction: b.reviewInstruction, applyInstruction: b.applyInstruction }, meta);
+      return send(res, 200, { duo: duo.summary() });
+    } catch (e) {
+      return send(res, 400, { error: e.message });
+    }
+  }
+  m = url.pathname.match(/^\/api\/duos\/([0-9a-f-]{36})$/);
+  if (m && req.method === 'GET') {
+    const d = duos.get(m[1]);
+    if (!d) return send(res, 404, { error: 'Duo not found' });
+    return send(res, 200, { duo: d.summary(), prompt: d.prompt, jobs: d.steps.map((st) => (st.jobId && jobs.get(st.jobId)?.summary()) || null) });
+  }
+  m = url.pathname.match(/^\/api\/duos\/([0-9a-f-]{36})\/cancel$/);
+  if (m && req.method === 'POST') {
+    const d = duos.get(m[1]);
+    if (!d) return send(res, 404, { error: 'Duo not found' });
+    duos.cancel(d);
+    audit('duo_cancel', { duo: d.id, ...meta });
+    return send(res, 200, { ok: true });
   }
   return send(res, 404, { error: 'Not found' });
 }
@@ -483,24 +578,35 @@ function wsSend(ws, msg) {
   if (ws.readyState === 1) ws.send(JSON.stringify(msg));
 }
 
+function broadcast(msg) {
+  for (const ws of sockets) wsSend(ws, msg);
+}
+
 function broadcastJobs() {
-  const list = jobs.list();
-  for (const ws of sockets) wsSend(ws, { type: 'jobs', jobs: list });
+  broadcast({ type: 'jobs', jobs: jobs.list() });
 }
 
 wss.on('connection', (ws) => {
   sockets.add(ws);
-  const subs = { stopTail: null, job: null, jobListener: null };
+  const subs = { stopTail: null, jobs: [] };
   const clear = () => {
     subs.stopTail?.();
     subs.stopTail = null;
-    if (subs.job) {
-      subs.job.off('event', subs.jobListener);
-      subs.job.off('update', subs.updateListener);
+    for (const { job, onEvent, onUpdate } of subs.jobs) {
+      job.off('event', onEvent);
+      job.off('update', onUpdate);
     }
-    subs.job = null;
+    subs.jobs = [];
+  };
+  const watchJob = (job) => {
+    const onEvent = (event) => wsSend(ws, { type: 'job-event', id: job.id, event });
+    const onUpdate = (summary) => wsSend(ws, { type: 'job-update', job: summary });
+    job.on('event', onEvent);
+    job.on('update', onUpdate);
+    subs.jobs.push({ job, onEvent, onUpdate });
   };
   wsSend(ws, { type: 'jobs', jobs: jobs.list() });
+  wsSend(ws, { type: 'duos', duos: duos.list() });
 
   ws.on('message', (raw) => {
     if (!sessions.isValid(ws.sessionId)) return ws.close(4001, 'expired');
@@ -520,12 +626,12 @@ wss.on('connection', (ws) => {
     } else if (msg.type === 'sub-job') {
       clear();
       const job = typeof msg.id === 'string' ? jobs.get(msg.id) : null;
-      if (!job) return;
-      subs.job = job;
-      subs.jobListener = (event) => wsSend(ws, { type: 'job-event', id: job.id, event });
-      subs.updateListener = (summary) => wsSend(ws, { type: 'job-update', job: summary });
-      job.on('event', subs.jobListener);
-      job.on('update', subs.updateListener);
+      if (job) watchJob(job);
+    } else if (msg.type === 'sub-jobs') {
+      // A duo page follows up to four jobs at once.
+      clear();
+      const ids = Array.isArray(msg.ids) ? msg.ids.filter((x) => typeof x === 'string').slice(0, 4) : [];
+      for (const id of new Set(ids)) { const job = jobs.get(id); if (job) watchJob(job); }
     } else if (msg.type === 'unsub') {
       clear();
     }
@@ -558,6 +664,7 @@ server.listen(cfg.port, cfg.host, () => {
 });
 
 function shutdown() {
+  duos.cancelAll();
   jobs.killAll();
   voice.stop();
   server.close();
