@@ -20,7 +20,11 @@ test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 /** Run the Stop hook as Claude Code would, returning its parsed stdout. */
 function runHook({ sessionId = SID, cwd = CWD, env = {} } = {}) {
-  const p = spawn(process.execPath, [HOOK], { env: { ...process.env, AGENT_BRIDGE_HOME: process.env.AGENT_BRIDGE_HOME, ...env } });
+  // Without this the test fails when the whole suite is itself running as an
+  // Agent Bridge job (a prompt sent from the app): the hook would refuse to park.
+  const clean = { ...process.env, AGENT_BRIDGE_HOME: process.env.AGENT_BRIDGE_HOME };
+  delete clean.AGENT_BRIDGE_JOB;
+  const p = spawn(process.execPath, [HOOK], { env: { ...clean, ...env } });
   let out = '';
   p.stdout.on('data', (c) => (out += c));
   p.stdin.end(JSON.stringify({ session_id: sessionId, cwd, hook_event_name: 'Stop', stop_hook_active: false }));

@@ -2,24 +2,19 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Agent Bridge: avvia simulatore Android",
+      "label": "Agent Bridge: start the server",
       "type": "shell",
-      "command": "${workspaceFolder}/scripts/run-android-emulator.sh",
+      "command": "npm start",
       "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated"
-      }
+      "presentation": { "reveal": "always", "panel": "dedicated" }
     },
     {
-      "label": "Agent Bridge: avvia simulatore iPhone (solo Mac)",
+      "label": "Agent Bridge: run the tests",
       "type": "shell",
-      "command": "${workspaceFolder}/scripts/run-ios-simulator.sh",
+      "command": "npm test",
+      "group": "test",
       "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated"
-      }
+      "presentation": { "reveal": "always", "panel": "dedicated" }
     }
   ]
 }

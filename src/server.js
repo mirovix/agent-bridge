@@ -151,13 +151,13 @@ const STATIC = {
   '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'],
   '/apple-touch-icon.png': ['apple-touch-icon.png', 'image/png'],
   '/icon-512.png': ['icon-512.png', 'image/png'],
-  '/happydev/': ['../android/app/src/main/assets/happydev/index.html', 'text/html; charset=utf-8'],
-  '/happydev/core.js': ['../android/app/src/main/assets/happydev/core.js', 'text/javascript; charset=utf-8'],
-  '/happydev/games/flappy.js': ['../android/app/src/main/assets/happydev/games/flappy.js', 'text/javascript; charset=utf-8'],
-  '/happydev/games/dash.js': ['../android/app/src/main/assets/happydev/games/dash.js', 'text/javascript; charset=utf-8'],
-  '/happydev/games/wings.js': ['../android/app/src/main/assets/happydev/games/wings.js', 'text/javascript; charset=utf-8'],
-  '/happydev/games/stack.js': ['../android/app/src/main/assets/happydev/games/stack.js', 'text/javascript; charset=utf-8'],
-  '/happydev/games/snake.js': ['../android/app/src/main/assets/happydev/games/snake.js', 'text/javascript; charset=utf-8'],
+  '/happydev/': ['happydev/index.html', 'text/html; charset=utf-8'],
+  '/happydev/core.js': ['happydev/core.js', 'text/javascript; charset=utf-8'],
+  '/happydev/games/flappy.js': ['happydev/games/flappy.js', 'text/javascript; charset=utf-8'],
+  '/happydev/games/dash.js': ['happydev/games/dash.js', 'text/javascript; charset=utf-8'],
+  '/happydev/games/wings.js': ['happydev/games/wings.js', 'text/javascript; charset=utf-8'],
+  '/happydev/games/stack.js': ['happydev/games/stack.js', 'text/javascript; charset=utf-8'],
+  '/happydev/games/snake.js': ['happydev/games/snake.js', 'text/javascript; charset=utf-8'],
 };
 
 // ---------- helpers ----------

@@ -5,7 +5,9 @@
 <p align="center">One web app to drive <b>Claude Code</b> and <b>Codex</b> on your computer, from your phone, tablet or any browser.<br>
 They can also work together: one writes the code, the other reviews it.</p>
 
-<p align="center"><a href="https://github.com/mirovix/agent-bridge/releases/latest"><b>Download the latest release</b></a></p>
+<p align="center"><i>No app to download: the server serves a web app you add to your home screen.</i></p>
+
+<p align="center"><a href="https://github.com/mirovix/agent-bridge/releases/latest"><b>Download the server</b></a> · <a href="docs/INSTALL_APP.md">install the app on your devices</a></p>
 
 ![Codex and Claude working on the same task](docs/images/agent-bridge-desktop.png)
 
@@ -44,21 +46,19 @@ You need [Node.js 20+](https://nodejs.org), [Tailscale](https://tailscale.com/do
 Test it on the computer itself: open `http://127.0.0.1:8765`.
 More detail: [server guide](docs/INSTALL_SERVER.md).
 
-### 2. iPhone or iPad
+### 2. Your phone, tablet or any other computer
 
-1. Install **Tailscale** from the App Store and sign in with the same account.
-2. Open your `https://…ts.net` address in **Safari** and sign in.
-3. Tap **Share → Add to Home Screen**. It now opens full screen, like an app.
+There is nothing to download: you install the web app your own server serves.
 
-Prefer a native app? See the [iPhone guide](docs/INSTALL_IOS.md).
+1. Install **Tailscale** on the device and sign in with the same account.
+2. Open your `https://…ts.net` address in the browser and sign in.
+3. Add it to the home screen, and it opens full screen like any other app:
+   - **iPhone, iPad**: Safari → **Share → Add to Home Screen**
+   - **Android**: Chrome → **⋮ → Add to Home screen**
+   - **Windows, Linux**: Chrome or Edge → the **install icon** in the address bar
+   - **macOS**: Safari → **File → Add to Dock**
 
-### 3. Android
-
-1. Install **Tailscale** from Google Play and sign in with the same account.
-2. Open your `https://…ts.net` address in **Chrome** and sign in.
-3. Tap **⋮ → Add to Home screen** (or **Install app**).
-
-Prefer the APK? Download `AgentBridge-<version>-android.apk` from Releases, or see the [Android guide](docs/INSTALL_ANDROID.md).
+Step by step, with troubleshooting: [install the app](docs/INSTALL_APP.md).
 
 <p align="center">
   <img src="docs/images/agent-bridge-mobile.png" width="340" alt="A duo on a phone">
@@ -95,6 +95,6 @@ npm start
 | `ui` | every screen and button of the web app in headless Chrome |
 | `real-agents` | the real CLIs end to end (opt-in) |
 
-CI runs everything on Linux, macOS and Windows. To publish a release, bump the version and push a tag (`git tag v1.5.0 && git push origin v1.5.0`): the [Release workflow](.github/workflows/release.yml) builds the server package, the Android APK, the iPhone IPA and the VS Code companion.
+CI runs everything on Linux, macOS and Windows. To publish a release, bump the version and push a tag (`git tag v1.6.0 && git push origin v1.6.0`): the [Release workflow](.github/workflows/release.yml) packages the server and the VS Code companion.
 
 MIT licensed.

@@ -1,30 +1,25 @@
 {
   "name": "Agent Bridge",
   "short_name": "Agents",
+  "description": "Drive Claude Code and Codex on your computer from any device.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
+  "lang": "en",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
-  "background_color": "#0f1115",
-  "theme_color": "#0f1115",
+  "background_color": "#0b0d12",
+  "theme_color": "#0b0d12",
   "icons": [
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/apple-touch-icon.png",
-      "sizes": "180x180",
-      "type": "image/png"
-    },
-    {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
-    }
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    { "name": "New prompt", "url": "/#/new" },
+    { "name": "Duo: Claude + Codex", "url": "/#/duo" },
+    { "name": "Activity", "url": "/#/jobs" }
   ],
   "categories": ["productivity", "developer tools"]
 }

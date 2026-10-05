@@ -1,26 +1,26 @@
 # Architecture
 
 Agent Bridge keeps credentials, conversations, and agent processes on the PC.
-Every client sends authenticated requests to the same local server.
+There is one client, the installable web app the server itself serves, so every
+device runs the same code and updates with the server.
 
 ```text
-iPhone SwiftUI ─┐
-Native Android ─┼─ HTTPS/Tailscale ─ Agent Bridge on Linux ─ Codex / Claude
-Web app / PWA ──┘                         │
-                                         ├─ ~/.codex/sessions
-                                         └─ ~/.claude/projects
+phone · tablet · laptop
+ (web app on the home screen) ─ HTTPS/Tailscale ─ Agent Bridge ─ Codex / Claude
+ VS Code companion ─ 127.0.0.1 ─────────────────────┘    │
+                                                        ├─ ~/.codex/sessions
+                                                        └─ ~/.claude/projects
 ```
 
 ## Components
 
 - `src/`: HTTP/WebSocket server, authentication, jobs, and conversation reader.
-- `public/`: web app and PWA with no build step.
-- `ios/`: SwiftUI app and Xcode project.
-- `android/`: native Android application.
+- `public/`: the installable web app, with no build step (`happydev/` is the bundled waiting-room games).
 - `vscode-extension/`: companion that connects the editor chat.
-- `scripts/`: setup, Linux service, Claude hook, Codex bridge, and simulators.
-- `test/`: Node.js unit and end-to-end tests.
-- `.github/workflows/`: reproducible APK and unsigned IPA builds.
+- `scripts/`: setup, autostart for each OS, Claude hook, Codex bridge.
+- `examples/`: ready-made configurations.
+- `test/`: unit, integration, UI (headless Chrome) and opt-in real-agent tests.
+- `.github/workflows/`: tests on Linux, macOS and Windows, and the release packaging.
 
 ## Shared conversations
 
@@ -50,6 +50,6 @@ to every open device over the WebSocket.
 
 The server listens only on `127.0.0.1`; remote access goes through Tailscale
 Serve. Passwords, 2FA keys, sessions, and audit events remain in
-`~/.agent-bridge/`, which is not versioned. Mobile apps store only the server
-URL, preferences, and session cookie inside their platform sandbox. APK, IPA,
-ZIP, and VSIX files are generated build artifacts excluded from Git.
+`~/.agent-bridge/`, which is not versioned. On a device the web app keeps only
+its session cookie and a copy of the settings, inside the browser's storage for
+that origin. ZIP and VSIX files are generated build artifacts excluded from Git.

@@ -10,19 +10,10 @@ __pycache__/
 !.env.example
 .agent-bridge/
 
-# Generated mobile packages and build directories
-*.apk
-*.aab
-*.ipa
-*.xcarchive
+# Generated packages
 *.zip
-android/.gradle/
-android/local.properties
-android/**/build/
-ios/build*/
-ios/DerivedData/
-**/xcuserdata/
-*.xcuserstate
+*.tar.gz
+dist/
 
 # Editor and operating-system files
 .DS_Store

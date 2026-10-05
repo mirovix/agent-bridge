@@ -2,7 +2,7 @@
 
 // Network first, cache as a fallback: after a server update every device gets the
 // new app on its next load, and the last good copy still opens when offline.
-const CACHE = 'agent-bridge-shell-v3';
+const CACHE = 'agent-bridge-shell-v4';
 const SHELL = [
   '/', '/app.js', '/style.css', '/manifest.webmanifest',
   '/icon.svg', '/icon-512.png', '/apple-touch-icon.png',

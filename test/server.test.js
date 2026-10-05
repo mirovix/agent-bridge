@@ -115,10 +115,19 @@ test('serves the app with a strict CSP', async () => {
 });
 
 test('serves an installable PWA shell and isolated HappyDEV activity', async () => {
+  // The web app is the only client, so it has to be installable on every system.
   const manifest = await request('GET', '/manifest.webmanifest');
   assert.equal(manifest.status, 200);
+  assert.equal(manifest.headers['content-type'], 'application/manifest+json');
   assert.equal(manifest.json.display, 'standalone');
   assert.equal(manifest.json.id, '/');
+  assert.equal(manifest.json.start_url, '/');
+  assert.ok(manifest.json.name && manifest.json.short_name.length <= 12);
+  assert.ok(manifest.json.icons.some((i) => i.sizes === '512x512' && /maskable/.test(i.purpose || '')), 'a maskable 512px icon is required to install');
+  for (const icon of manifest.json.icons) {
+    const file = await request('GET', icon.src);
+    assert.equal(file.status, 200, icon.src);
+  }
 
   const worker = await request('GET', '/service-worker.js');
   assert.equal(worker.status, 200);

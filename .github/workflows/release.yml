@@ -1,6 +1,7 @@
 name: Release
 
-# Push a tag like v1.5.0 to build every client and publish a GitHub Release.
+# Push a tag like v1.6.0 to package the server and the VS Code companion,
+# then publish a GitHub Release. The app itself is the web app the server serves.
 on:
   push:
     tags: ['v*']
@@ -27,9 +28,6 @@ jobs:
           NAME="agent-bridge-server-$VERSION"
           mkdir -p "dist/$NAME"
           cp -r src public scripts docs examples package.json package-lock.json README.md LICENSE "dist/$NAME/"
-          # The web app serves the HappyDEV games from the Android assets folder.
-          mkdir -p "dist/$NAME/android/app/src/main/assets"
-          cp -r android/app/src/main/assets/happydev "dist/$NAME/android/app/src/main/assets/"
           rm -rf "dist/$NAME/scripts/__pycache__"
           (cd dist && zip -qr "$NAME.zip" "$NAME" && tar -czf "$NAME.tar.gz" "$NAME")
       - uses: actions/upload-artifact@v4
@@ -52,59 +50,8 @@ jobs:
           path: vscode-extension/*.vsix
           if-no-files-found: error
 
-  android:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.6.0"
-      - name: Build APK
-        working-directory: android
-        run: gradle :app:assembleDebug --stacktrace
-      - name: Name APK
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          mkdir -p dist && cp android/app/build/outputs/apk/debug/app-debug.apk "dist/AgentBridge-$VERSION-android.apk"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android
-          path: dist/*.apk
-          if-no-files-found: error
-
-  ios:
-    runs-on: macos-15
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v5
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-      - name: Build unsigned iPhone app
-        run: |
-          set -o pipefail
-          xcodebuild -project ios/AgentBridge.xcodeproj -scheme "Agent Bridge" -configuration Release \
-            -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath "$RUNNER_TEMP/dd" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" clean build
-      - name: Package IPA
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          APP="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/Agent Bridge.app"
-          test -d "$APP"
-          mkdir -p "$RUNNER_TEMP/payload/Payload" dist
-          ditto "$APP" "$RUNNER_TEMP/payload/Payload/Agent Bridge.app"
-          (cd "$RUNNER_TEMP/payload" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/dist/AgentBridge-$VERSION-ios-unsigned.ipa" Payload)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ios
-          path: dist/*.ipa
-          if-no-files-found: error
-
   release:
-    needs: [server, vscode, android, ios]
+    needs: [server, vscode]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
