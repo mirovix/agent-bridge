@@ -21,3 +21,7 @@ dist/
 
 # Separate application/repository that may live beside this project locally
 /nuvia-desktop/
+
+# Leftover native app builds: v1.6.0 ships the installable web app instead.
+android/
+ios/
